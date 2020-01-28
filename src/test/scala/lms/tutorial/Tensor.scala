@@ -23,6 +23,11 @@ trait TensorOps { b: Base =>
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA) ++ xs.map(i => Backend.Const(i))
       Wrap[Tensor[A]](Adapter.g.reflect("tensor-new", unwrapped_xs:_*))
     }
+    def fill[A: Manifest](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Rep[Tensor[A]] = {
+      val tensor = Tensor[A](dims)
+      tensor.mapInplace(_ => Const(fillVal))
+      tensor
+    }
   }
 
   implicit class TensorOps[A: Manifest](tensor: Rep[Tensor[A]]) {
@@ -136,9 +141,9 @@ object Runer {
   def main(args: Array[String]) {
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val tensor = Tensor[Float](Seq(1, 2, 3))
+        val tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0)
         println(tensor)
-        tensor(Seq(0, 1, 2)) = 5.0
+
         println(tensor(0, 1, 2))
         println(123)
       }
