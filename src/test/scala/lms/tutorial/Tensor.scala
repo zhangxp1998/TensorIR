@@ -26,7 +26,11 @@ trait TensorOps { b: Base =>
   }
 
   implicit class TensorOps[A: Manifest](xs: Rep[Tensor[A]]) {
-
+    def apply(idx: Int): Rep[A] = {
+      val mA = Backend.Const(manifest[A])
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(xs), Backend.Const(idx))
+      Wrap[A](Adapter.g.reflect("tensor-apply", unwrapped_xs:_*))
+    }
   }
 
 }
@@ -38,6 +42,9 @@ trait BaseGenTensorOps extends DslGenC {
       val dims = rhs.tail.map{case Const(i: Int) => i}
       emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
     }
+    case Node(s, "tensor-apply", List(manifest, tensor, Const(idx: Int)), eff) => {
+      emit(s"${quote(tensor)}[$idx]")
+    }
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""");
       emit(format(x))
@@ -48,9 +55,11 @@ trait BaseGenTensorOps extends DslGenC {
   }
   def format(x: Def): String = x match {
     case exp: Exp => exp match {
-      case s@Sym(_) => typeMap(s) match {
-        case _: Manifest[Tensor[_]] =>
+      case s@Sym(_) => typeMap(s).toString match {
+        case m if m.contains("scala.lms.tutorial.Tensor[") =>
           "%p"
+        case m if m == "Float" =>
+          "%f"
       }
       case Const(_: Int) => "%d"
       case Const(_: Float) => "%f"
@@ -72,6 +81,7 @@ object Runer {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val tensor = Tensor[Float](Seq(1, 2, 3))
         println(tensor)
+        println(tensor(0))
         println(123)
       }
     }
