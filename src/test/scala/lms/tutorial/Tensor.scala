@@ -8,7 +8,7 @@ import lms.core.Backend._
 import lms.core.virtualize
 import lms.core.utils.time
 import lms.macros.{RefinedManifest, SourceContext}
-
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.AnyValManifest
 
 trait Tensor[A] {
@@ -31,16 +31,24 @@ trait TensorOps { b: Base =>
   }
 
   implicit class TensorOps[A: Manifest](xs: Rep[Tensor[A]]) {
-    def getTensorDims: Seq[Int] = Adapter.g.findDefinition(Unwrap(xs)) match {
+    lazy val dims: Seq[Int] = Adapter.g.findDefinition(Unwrap(xs)) match {
       case Some(Node(n, "tensor-new", _:: dims, _)) => dims.map{case Backend.Const(i: Int) => i}
+    }
+    def checkIdx(idx: Seq[Int]) = {
+      assert(dims.length == idx.length, s"Tensor index $idx does not match dimension $dims")
+      assert(idx.zip(dims).forall{case (a, b) => a < b}, s"Tensor index $idx is out of bounds for dimension $dims")
     }
     def apply(idx: Int*): Rep[A] = {
       val mA = Backend.Const(manifest[A])
-      val dims = getTensorDims
-      assert(dims.length == idx.length, s"Tensor index $idx does not match dimension $dims")
-      assert(idx.zip(dims).forall{case (a, b) => a < b}, s"Tensor index $idx is out of bounds for dimension $dims")
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(xs), Backend.Const(idx), Backend.Const(dims))
-      Wrap[A](Adapter.g.reflect("tensor-apply", unwrapped_xs:_*))
+      Wrap[A](Adapter.g.reflectRead("tensor-apply", unwrapped_xs:_*)(Unwrap(xs)))
+    }
+
+    def update(idx: Seq[Int], newVal: A): Unit = {
+      checkIdx(idx)
+      val mA = Backend.Const(manifest[A])
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(xs), Backend.Const(idx), Backend.Const(newVal), Backend.Const(dims))
+      Wrap[A](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(xs)))
     }
   }
 }
@@ -55,6 +63,10 @@ trait BaseGenTensorOps extends DslGenC {
     case Node(s, "tensor-apply", List(manifest, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), eff) => {
       val sizes = dims.scanRight(1)(_ * _).tail
       emit(s"${quote(tensor)}[${idx.zip(sizes).map{case (a, b) => a*b}.sum}]")
+    }
+    case Node(s, "tensor-update", List(_, tensor, Const(idx: Seq[Int]), newVal, Const(dims: Seq[Int])), _) => {
+      val sizes = dims.scanRight(1)(_ * _).tail
+      emit(s"${quote(tensor)}[${idx.zip(sizes).map{case (a, b) => a*b}.sum}] = ${quote(newVal)}")
     }
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""");
@@ -93,6 +105,7 @@ object Runer {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val tensor = Tensor[Float](Seq(1, 2, 3))
         println(tensor)
+        tensor(Seq(0, 1, 2)) = 1
         println(tensor(0, 1, 2))
         println(123)
       }
