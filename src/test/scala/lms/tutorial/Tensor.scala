@@ -23,16 +23,26 @@ trait TensorOps { b: Base =>
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA) ++ xs.map(i => Backend.Const(i))
       Wrap[Tensor[A]](Adapter.g.reflect("tensor-new", unwrapped_xs:_*))
     }
-  }
-
-  implicit class TensorOps[A: Manifest](xs: Rep[Tensor[A]]) {
-    def apply(idx: Int): Rep[A] = {
-      val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(xs), Backend.Const(idx))
-      Wrap[A](Adapter.g.reflect("tensor-apply", unwrapped_xs:_*))
+    def fill[A: Manifest](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Rep[Tensor[A]] = {
+      val tensor: Rep[Tensor[A]] = Tensor[A](dims)
+      val xs: Seq[Backend.Def] = Seq(Unwrap(tensor), Backend.Const(fillVal))
+      Wrap[Tensor[A]](Adapter.g.reflect("tensor-fill", xs: _*))
     }
   }
 
+  implicit class TensorOps[A: Manifest](xs: Rep[Tensor[A]]) {
+    def getTensorDims: Seq[Int] = Adapter.g.findDefinition(Unwrap(xs)) match {
+      case Some(Node(n, "tensor-new", _:: dims, _)) => dims.map{case Backend.Const(i: Int) => i}
+    }
+    def apply(idx: Int*): Rep[A] = {
+      val mA = Backend.Const(manifest[A])
+      val dims = getTensorDims
+      assert(dims.length == idx.length, s"Tensor index $idx does not match dimension $dims")
+      assert(idx.zip(dims).forall{case (a, b) => a < b}, s"Tensor index $idx is out of bounds for dimension $dims")
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(xs), Backend.Const(idx), Backend.Const(dims))
+      Wrap[A](Adapter.g.reflect("tensor-apply", unwrapped_xs:_*))
+    }
+  }
 }
 
 trait BaseGenTensorOps extends DslGenC {
@@ -42,8 +52,9 @@ trait BaseGenTensorOps extends DslGenC {
       val dims = rhs.tail.map{case Const(i: Int) => i}
       emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
     }
-    case Node(s, "tensor-apply", List(manifest, tensor, Const(idx: Int)), eff) => {
-      emit(s"${quote(tensor)}[$idx]")
+    case Node(s, "tensor-apply", List(manifest, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), eff) => {
+      val sizes = dims.scanRight(1)(_ * _).tail
+      emit(s"${quote(tensor)}[${idx.zip(sizes).map{case (a, b) => a*b}.sum}]")
     }
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""");
@@ -51,6 +62,7 @@ trait BaseGenTensorOps extends DslGenC {
       emit("""\n", """) // Should look like <BEGIN>\n", <END>
       shallow(x);
       emit(")");
+
     case _ => super.shallow(node)
   }
   def format(x: Def): String = x match {
@@ -58,7 +70,7 @@ trait BaseGenTensorOps extends DslGenC {
       case s@Sym(_) => typeMap(s).toString match {
         case m if m.contains("scala.lms.tutorial.Tensor[") =>
           "%p"
-        case m if m == "Float" =>
+        case "Float" =>
           "%f"
       }
       case Const(_: Int) => "%d"
@@ -81,7 +93,7 @@ object Runer {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val tensor = Tensor[Float](Seq(1, 2, 3))
         println(tensor)
-        println(tensor(0))
+        println(tensor(0, 1, 2))
         println(123)
       }
     }
