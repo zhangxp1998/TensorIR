@@ -73,7 +73,12 @@ trait TensorOps { b: Base =>
       val totalSize = dims.product
       for(i <- 0 until totalSize: Rep[Range]) {
         unsafe_update(i, f(unsafe_apply(i)))
-//        Adapter.g.reify((e => Unwrap(f(Wrap[A](e)))): Backend.Exp => Backend.Exp)
+      }
+    }
+    def mapInplaceWithFlatIdx(f: (Rep[A], Rep[Int]) => Rep[A]): Unit = {
+      val totalSize = dims.product
+      for(i <- 0 until totalSize: Rep[Range]) {
+        unsafe_update(i, f(unsafe_apply(i), i))
       }
     }
 
@@ -128,14 +133,15 @@ trait BaseGenTensorOps extends DslGenC {
       emit("[")
       shallow(idx)
       emit("] = ")
-      emit(quote(newVal))
+      shallow(newVal)
     case Node(s, "tensor-fill", List(mA, tensor, fillVal, Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
       val loopCounter = "i" + s.n
       emitln(s"for (int $loopCounter = 0; $loopCounter < $totalSize; $loopCounter ++) {")
       shallow(tensor)
-      emitln(s"[$loopCounter] = ${quote(fillVal)};")
-      emitln("}")
+      emitln(s"[$loopCounter] = ")
+      shallow(fillVal)
+      emitln(";}")
 
     case Node(s, "tensor-copy", List(mA, tensor, Const(dims: Seq[Int])), _) =>
       val manifest = mA match {case Const(mani: Manifest[_]) => mani}
@@ -202,12 +208,15 @@ object Runer {
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0)
+        val tensor2 = Tensor[Float](Seq(1, 2, 3))
+        tensor2.mapInplaceWithFlatIdx((_, idx) => idx)
         println(tensor)
 
         println(tensor(0, 1, 2))
         println(tensor.copy()(0, 1, 2))
         println((tensor+tensor(0, 0, 0))(0, 1, 2))
-        println(123)
+        println(tensor2(0, 1, 2))
+
       }
     }
     dslDriver.eval("5")
