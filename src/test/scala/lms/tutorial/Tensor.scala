@@ -16,7 +16,6 @@ trait Tensor[A] {
 }
 
 trait TensorOps { b: Base =>
-
   object Tensor {
     def apply[A: Manifest](xs: Seq[Int])(implicit pos: SourceContext): Rep[Tensor[A]] = {
       val mA = Backend.Const(manifest[A])
@@ -35,6 +34,7 @@ trait TensorOps { b: Base =>
   implicit class TensorOps[A: Manifest](tensor: Rep[Tensor[A]]) {
     lazy val dims: Seq[Int] = Adapter.g.findDefinition(Unwrap(tensor)) match {
       case Some(Node(n, "tensor-new", _:: dims, _)) => dims.map{case Backend.Const(i: Int) => i}
+      case Some(Node(n, "tensor-copy", _:: _ :: dims :: Nil, _)) => dims match {case Backend.Const(seq: Seq[Int]) => seq}
     }
     def checkIdx(idx: Seq[Int]) = {
       assert(dims.length == idx.length, s"Tensor index $idx does not match dimension $dims")
@@ -75,10 +75,33 @@ trait TensorOps { b: Base =>
         unsafe_update(i, f(unsafe_apply(i)))
       }
     }
+
+    def copy(): Rep[Tensor[A]] = {
+      val mA = Backend.Const(manifest[A])
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Backend.Const(dims))
+      Wrap[Tensor[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(tensor)))
+    }
+
+    def +(rhs: Rep[A]): Rep[Tensor[A]] = {
+      val mA = Backend.Const(manifest[A])
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(rhs), Backend.Const(dims))
+      Wrap[Tensor[A]](Adapter.g.reflectWrite("tensor-add-broadcast", unwrapped_xs:_*)(Unwrap(tensor)))
+    }
   }
 }
 
 trait BaseGenTensorOps extends DslGenC {
+  registerHeader("<string.h>")
+  registerTopLevelFunction("tensor_copy"){
+    emit(
+      """
+        |static void *memdup(void* source, size_t bytes) {
+        |   void *copy = malloc(bytes);
+        |   memcpy(copy, source, bytes);
+        |   return copy;
+        |}
+        |""".stripMargin)
+  }
   override def shallow(node: Node) = node match {
     case Node(s, "tensor-new", rhs, eff) => {
       val manifest = rhs.head match {case Const(mani: Manifest[_]) => mani}
@@ -87,7 +110,8 @@ trait BaseGenTensorOps extends DslGenC {
     }
     case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) => {
       val sizes = dims.scanRight(1)(_ * _).tail
-      emit(s"${quote(tensor)}[${idx.zip(sizes).map{case (a, b) => a*b}.sum}]")
+      shallow(tensor)
+      emit(s"[${idx.zip(sizes).map{case (a, b) => a*b}.sum}]")
     }
     case Node(s, "tensor-apply", List(_, tensor, idx), _) => {
       // Comming from unsafe_apply
@@ -113,6 +137,17 @@ trait BaseGenTensorOps extends DslGenC {
       shallow(tensor)
       emitln(s"[$loopCounter] = ${quote(fillVal)};")
       emitln("}")
+
+    case Node(s, "tensor-copy", List(mA, tensor, Const(dims: Seq[Int])), _) =>
+      val manifest = mA match {case Const(mani: Manifest[_]) => mani}
+      val totalSize = dims.product
+      val byteSize = s"$totalSize * sizeof(${remap(manifest)})"
+      emit(s"((${remap(manifest)}*)")
+      emit("(memdup(")
+      shallow(tensor)
+      emit(", ")
+      emit(byteSize.toString)
+      emit(")))")
 
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""");
@@ -155,6 +190,7 @@ object Runer {
         println(tensor)
 
         println(tensor(0, 1, 2))
+        println(tensor.copy()(0, 1, 2))
         println(123)
       }
     }
