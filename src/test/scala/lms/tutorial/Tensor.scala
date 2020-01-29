@@ -105,34 +105,30 @@ trait BaseGenTensorOps extends DslGenC {
         |}
         |""".stripMargin)
   }
-  override def shallow(node: Node) = node match {
-    case Node(s, "tensor-new", rhs, eff) => {
+  override def shallow(node: Node): Unit = node match {
+    case Node(s, "tensor-new", rhs, eff) =>
       val manifest = rhs.head match {case Const(mani: Manifest[_]) => mani}
       val dims = rhs.tail.map{case Const(i: Int) => i}
       emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
-    }
-    case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) => {
+    case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
       shallow(tensor)
       emit(s"[${idx.zip(sizes).map{case (a, b) => a*b}.sum}]")
-    }
-    case Node(s, "tensor-apply", List(_, tensor, idx), _) => {
+    case Node(s, "tensor-apply", List(_, tensor, idx), _) =>
       // Comming from unsafe_apply
-      emit(s"${quote(tensor)}[${shallow(idx)}]")
-    }
-    case Node(s, "tensor-update", List(_, tensor, Const(idx: Seq[Int]), newVal, Const(dims: Seq[Int])), _) => {
+      shallow(tensor)
+      emit(s"[${shallow(idx)}]")
+    case Node(s, "tensor-update", List(_, tensor, Const(idx: Seq[Int]), newVal, Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
       shallow(tensor)
       emit(s"[${idx.zip(sizes).map{case (a, b) => a*b}.sum}] = ")
       shallow(newVal)
-    }
-    case Node(s, "tensor-update", List(_, tensor, idx, newVal), _) => {
+    case Node(s, "tensor-update", List(_, tensor, idx, newVal), _) =>
       shallow(tensor)
       emit("[")
       shallow(idx)
       emit("] = ")
       emit(quote(newVal))
-    }
     case Node(s, "tensor-fill", List(mA, tensor, fillVal, Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
       val loopCounter = "i" + s.n
