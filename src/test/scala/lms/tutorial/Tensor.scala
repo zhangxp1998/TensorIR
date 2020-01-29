@@ -73,6 +73,7 @@ trait TensorOps { b: Base =>
       val totalSize = dims.product
       for(i <- 0 until totalSize: Rep[Range]) {
         unsafe_update(i, f(unsafe_apply(i)))
+//        Adapter.g.reify((e => Unwrap(f(Wrap[A](e)))): Backend.Exp => Backend.Exp)
       }
     }
 
@@ -84,8 +85,10 @@ trait TensorOps { b: Base =>
 
     def +(rhs: Rep[A]): Rep[Tensor[A]] = {
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(rhs), Backend.Const(dims))
-      Wrap[Tensor[A]](Adapter.g.reflectWrite("tensor-add-broadcast", unwrapped_xs:_*)(Unwrap(tensor)))
+      val result = tensor.copy()
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result), Unwrap(rhs), Backend.Const(dims))
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-add-broadcast", unwrapped_xs:_*)(Unwrap(result)))
+      result
     }
   }
 }
@@ -148,13 +151,29 @@ trait BaseGenTensorOps extends DslGenC {
       emit(", ")
       emit(byteSize.toString)
       emit(")))")
+    case Node(s, "tensor-add-broadcast", List(mA, tensor, rhs, Backend.Const(dims: Seq[Int])), _) =>
+      val totalSize = dims.product
+      val loopCounter = "i" + s.n
+      emit(
+        s"""
+          |for (int $loopCounter = 0; $loopCounter < $totalSize; $loopCounter ++) {
+          |
+          |""".stripMargin)
+      shallow(tensor)
+      emit(s"[$loopCounter] += ")
+      shallow(rhs)
+      emit(
+        """
+          |;
+          |}
+          |""".stripMargin)
 
     case n @ Node(s,"P",List(x),_) =>
-      emit("""printf("""");
+      emit("""printf("""")
       emit(format(x))
       emit("""\n", """) // Should look like <BEGIN>\n", <END>
-      shallow(x);
-      emit(")");
+      shallow(x)
+      emit(")")
 
     case _ => super.shallow(node)
   }
@@ -191,6 +210,7 @@ object Runer {
 
         println(tensor(0, 1, 2))
         println(tensor.copy()(0, 1, 2))
+        println((tensor+tensor(0, 0, 0))(0, 1, 2))
         println(123)
       }
     }
