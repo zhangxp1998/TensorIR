@@ -25,7 +25,9 @@ trait TensorOps { b: Base =>
     }
     def fill[A: Manifest](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Rep[Tensor[A]] = {
       val tensor = Tensor[A](dims)
-      tensor.mapInplace(_ => Const(fillVal))
+      val mA = Backend.Const(manifest[A])
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(fillVal), Backend.Const(dims))
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", unwrapped_xs:_*)(Unwrap(tensor)))
       tensor
     }
   }
@@ -104,6 +106,14 @@ trait BaseGenTensorOps extends DslGenC {
       emit("] = ")
       emit(quote(newVal))
     }
+    case Node(s, "tensor-fill", List(mA, tensor, fillVal, Const(dims: Seq[Int])), _) =>
+      val totalSize = dims.product
+      val loopCounter = "i" + s.n
+      emitln(s"for (int $loopCounter = 0; $loopCounter < $totalSize; $loopCounter ++) {")
+      shallow(tensor)
+      emitln(s"[$loopCounter] = ${quote(fillVal)};")
+      emitln("}")
+
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""");
       emit(format(x))
