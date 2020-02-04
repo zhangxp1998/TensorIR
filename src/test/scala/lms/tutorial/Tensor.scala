@@ -8,8 +8,6 @@ import lms.core.Backend._
 import lms.core.virtualize
 import lms.core.utils.time
 import lms.macros.{RefinedManifest, SourceContext}
-import scala.collection.mutable.ArrayBuffer
-import scala.reflect.AnyValManifest
 
 trait Tensor[A] {
 
@@ -20,7 +18,7 @@ trait TensorOps { b: Base =>
     def apply[A: Manifest](xs: Seq[Int])(implicit pos: SourceContext): Rep[Tensor[A]] = {
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA) ++ xs.map(i => Backend.Const(i))
-      Wrap[Tensor[A]](Adapter.g.reflect("tensor-new", unwrapped_xs:_*))
+      Wrap[Tensor[A]](Adapter.g.reflectWrite("tensor-new", unwrapped_xs:_*)(STORE))
     }
     def fill[A: Manifest](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Rep[Tensor[A]] = {
       val tensor = Tensor[A](dims)
@@ -88,11 +86,48 @@ trait TensorOps { b: Base =>
       Wrap[Tensor[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(tensor)))
     }
 
-    def +(rhs: Rep[A]): Rep[Tensor[A]] = {
+    private def binary_broadcast(op: String, rhs: Rep[A]): Rep[Tensor[A]] = {
       val mA = Backend.Const(manifest[A])
       val result = tensor.copy()
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result), Unwrap(rhs), Backend.Const(dims))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-add-broadcast", unwrapped_xs:_*)(Unwrap(result)))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result), Backend.Const(op), Unwrap(rhs), Backend.Const(dims))
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-binary-broadcast", unwrapped_xs:_*)(Unwrap(result)))
+      result
+    }
+
+    def +(rhs: Rep[A]): Rep[Tensor[A]] = {
+      binary_broadcast("+=", rhs)
+    }
+    def -(rhs: Rep[A]): Rep[Tensor[A]] = {
+      binary_broadcast("-=", rhs)
+    }
+    def *(rhs: Rep[A]): Rep[Tensor[A]] = {
+      binary_broadcast("*=", rhs)
+    }
+    def /(rhs: Rep[A]): Rep[Tensor[A]] = {
+      binary_broadcast("/=", rhs)
+    }
+
+    def matmul(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+      val rhs_dims: Seq[Int] = rhs.dims
+      val lhs_dims: Seq[Int] = dims
+      val mA = Backend.Const(manifest[A])
+      if (lhs_dims.length != 2) {
+        throw new RuntimeException(s"$lhs_dims must be 2D")
+      }
+      if (lhs_dims(1) != rhs_dims.head) {
+        throw new RuntimeException(s"$lhs_dims and $rhs_dims are not compatible")
+      }
+      val M: Int = lhs_dims.head
+      val K: Int = rhs_dims.head
+      val N: Int = rhs_dims match {
+        case _::tail::Nil => tail
+        case _::Nil => 1
+      }
+
+      // vector-vector multiplication
+      val result = Tensor[A](Seq(M, N))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(rhs), Unwrap(result), Backend.Const(Seq(M, K, N)))
+      Wrap[Unit](Adapter.g.reflectEffect("matrix-multiply", unwrapped_xs:_*)(Unwrap(tensor), Unwrap(rhs))(Unwrap(result)))
       result
     }
   }
@@ -100,6 +135,8 @@ trait TensorOps { b: Base =>
 
 trait BaseGenTensorOps extends DslGenC {
   registerHeader("<string.h>")
+  registerHeader("<cblas.h>")
+  registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas")
   registerTopLevelFunction("tensor_copy"){
     emit(
       """
@@ -153,7 +190,7 @@ trait BaseGenTensorOps extends DslGenC {
       emit(", ")
       emit(byteSize.toString)
       emit(")))")
-    case Node(s, "tensor-add-broadcast", List(mA, tensor, rhs, Backend.Const(dims: Seq[Int])), _) =>
+    case Node(s, "tensor-binary-broadcast", List(mA, tensor, Backend.Const(op: String), rhs, Backend.Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
       val loopCounter = "i" + s.n
       emit(
@@ -162,13 +199,25 @@ trait BaseGenTensorOps extends DslGenC {
           |
           |""".stripMargin)
       shallow(tensor)
-      emit(s"[$loopCounter] += ")
+      emit(s"[$loopCounter] $op ")
       shallow(rhs)
       emit(
         """
           |;
           |}
           |""".stripMargin)
+
+    case Node(s, "matrix-multiply", List(mA, lhs, rhs, result, Const(Seq(m: Int, k: Int, n: Int))), _) =>
+      if (mA.toString != "Float") {
+        throw new RuntimeException(s"Only floating point values are supported: ${mA.toString}")
+      }
+      emit(s"cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, $m, $n, $k, 1, ")
+      shallow(lhs)
+      emit(s", $m, ")
+      shallow(rhs)
+      emit(s", $k, 0, ")
+      shallow(result)
+      emit(s", $m);")
 
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""")
@@ -217,6 +266,16 @@ object Runer {
         println((tensor+tensor(0, 0, 0))(0, 1, 2))
         println(tensor2(0, 1, 2))
 
+        val mat1 = Tensor[Float](Seq(3, 3))
+        mat1(Seq(0, 0)) = 1.0
+        mat1(Seq(1, 1)) = 1.0
+        mat1(Seq(2, 2)) = 1.0
+        val mat2 = Tensor[Float](Seq(3, 3))
+        mat2.mapInplaceWithFlatIdx((_, idx) => idx)
+        val mat3 = mat1.matmul(mat2)
+        println(mat3(0, 0))
+        println(mat3(0, 1))
+        println(mat3(0, 2))
       }
     }
     dslDriver.eval("5")
