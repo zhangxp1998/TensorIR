@@ -5,6 +5,7 @@ import lms.core._
 import lms.util._
 import lms.core.stub._
 import lms.core.Backend._
+import lms.core.stub.Adapter.typeMap
 import lms.core.virtualize
 import lms.core.utils.time
 import lms.macros.{RefinedManifest, SourceContext}
@@ -134,6 +135,7 @@ trait TensorOps { b: Base =>
 }
 
 trait BaseGenTensorOps extends DslGenC {
+  doRename = false
   registerHeader("<string.h>")
   registerHeader("<cblas.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas")
@@ -246,11 +248,66 @@ trait BaseGenTensorOps extends DslGenC {
   }
 }
 
-trait TensorDriverC[A, B] extends DslDriverC[A, B] with TensorOps { q =>
+abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] with TensorOps { q =>
   override val codegen = new BaseGenTensorOps {
     override val IR: q.type = q
   }
+  lazy val g: Graph = Adapter.program(Adapter.g.reify(x => Unwrap(wrapper(Wrap[A](x)))))
 }
+
+class MemoryPlanningTraverser extends Traverser {
+  var time: Int = 0
+  def getTime(): Int = {
+    time+=1
+    time
+  }
+  class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, val size: Int) {
+    override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
+  }
+
+  class MemoryEvent {
+
+  }
+  case class Allocation(id: Int, size: Int) extends MemoryEvent
+  case class Deallocation(id: Int, size: Int) extends MemoryEvent
+
+  val requests = scala.collection.mutable.HashMap[Int, MemoryRequest]()
+
+  lazy val events = {
+    val bst = scala.collection.mutable.TreeMap[Int, MemoryEvent]()
+    requests.foreach{
+      case (key, req) =>
+        bst(req.allocatedTime) = Allocation(key, req.size)
+        bst(req.deallocatedTime) = Deallocation(key, req.size)
+    }
+    bst
+  }
+  override def traverse(n: Node): Unit = {
+    n match {
+      case Node(n, "tensor-new", _:: dims, _) =>
+        val size = dims.map{case Backend.Const(i: Int) => i}.product
+        requests.getOrElseUpdate(n.n, new MemoryRequest(getTime(), getTime(), size)).deallocatedTime = getTime()
+      case Node(n, "tensor-copy", _:: src :: dims :: Nil, _) =>
+        val size = (dims match {case Backend.Const(seq: Seq[Int]) => seq}).product
+        requests.getOrElseUpdate(n.n, new MemoryRequest(getTime(), getTime(), size)).deallocatedTime = getTime()
+        src match {
+          case exp: Exp => exp match {
+            case Sym(n) => requests(n).deallocatedTime = getTime()
+          }
+        }
+      case Node(_, _, _, eff) =>
+        eff.rkeys.foreach{
+          case Sym(n) =>
+          requests.get(n) match {
+            case Some(request) => request.deallocatedTime = getTime()
+            case None =>
+          }
+        case _ =>
+        }
+    }
+  }
+}
+
 object Runer {
 
   def main(args: Array[String]) {
@@ -278,6 +335,12 @@ object Runer {
         println(mat3(0, 2))
       }
     }
+
+    val traverser = new MemoryPlanningTraverser()
+    Adapter.typeMap = new scala.collection.mutable.HashMap[lms.core.Backend.Exp, Manifest[_]]()
+    traverser(dslDriver.g)
+    traverser.events.values.foreach(println)
+
     dslDriver.eval("5")
   }
 }
