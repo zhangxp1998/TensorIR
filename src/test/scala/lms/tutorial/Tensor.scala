@@ -136,6 +136,7 @@ trait TensorOps { b: Base =>
 
 trait BaseGenTensorOps extends DslGenC {
   doRename = false
+//  val _shouldInline = shouldInline
   registerHeader("<string.h>")
   registerHeader("<cblas.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas")
@@ -149,6 +150,7 @@ trait BaseGenTensorOps extends DslGenC {
         |}
         |""".stripMargin)
   }
+
   override def shallow(node: Node): Unit = node match {
     case Node(s, "tensor-new", rhs, eff) =>
       val manifest = rhs.head match {case Const(mani: Manifest[_]) => mani}
@@ -261,7 +263,7 @@ class MemoryPlanningTraverser extends Traverser {
     time+=1
     time
   }
-  class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, val size: Int) {
+  class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUseSym: Sym, val size: Int) {
     override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
   }
 
@@ -269,7 +271,7 @@ class MemoryPlanningTraverser extends Traverser {
 
   }
   case class Allocation(id: Int, size: Int) extends MemoryEvent
-  case class Deallocation(id: Int, size: Int) extends MemoryEvent
+  case class Deallocation(id: Int, size: Int, afterSym: Sym) extends MemoryEvent
 
   val requests = scala.collection.mutable.HashMap[Int, MemoryRequest]()
 
@@ -278,7 +280,7 @@ class MemoryPlanningTraverser extends Traverser {
     requests.foreach{
       case (key, req) =>
         bst(req.allocatedTime) = Allocation(key, req.size)
-        bst(req.deallocatedTime) = Deallocation(key, req.size)
+        bst(req.deallocatedTime) = Deallocation(key, req.size, req.lastUseSym)
     }
     bst
   }
@@ -286,20 +288,24 @@ class MemoryPlanningTraverser extends Traverser {
     n match {
       case Node(n, "tensor-new", _:: dims, _) =>
         val size = dims.map{case Backend.Const(i: Int) => i}.product
-        requests.getOrElseUpdate(n.n, new MemoryRequest(getTime(), getTime(), size)).deallocatedTime = getTime()
+        requests(n.n) = new MemoryRequest(getTime(), getTime(), n, size)
       case Node(n, "tensor-copy", _:: src :: dims :: Nil, _) =>
         val size = (dims match {case Backend.Const(seq: Seq[Int]) => seq}).product
-        requests.getOrElseUpdate(n.n, new MemoryRequest(getTime(), getTime(), size)).deallocatedTime = getTime()
+        requests(n.n) = new MemoryRequest(getTime(), getTime(), n, size)
         src match {
           case exp: Exp => exp match {
-            case Sym(n) => requests(n).deallocatedTime = getTime()
+            case Sym(ref) =>
+              requests(ref).deallocatedTime = getTime()
+              requests(ref).lastUseSym = n
           }
         }
-      case Node(_, _, _, eff) =>
+      case Node(n, _, _, eff) =>
         eff.rkeys.foreach{
-          case Sym(n) =>
-          requests.get(n) match {
-            case Some(request) => request.deallocatedTime = getTime()
+          case Sym(ref) =>
+          requests.get(ref) match {
+            case Some(request) =>
+              request.deallocatedTime = getTime()
+              request.lastUseSym = n
             case None =>
           }
         case _ =>
