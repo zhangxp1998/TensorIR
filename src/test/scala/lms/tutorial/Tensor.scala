@@ -10,6 +10,8 @@ import lms.core.virtualize
 import lms.core.utils.time
 import lms.macros.{RefinedManifest, SourceContext}
 
+import scala.collection.mutable
+
 trait Tensor[A] {
 
 }
@@ -140,6 +142,12 @@ trait BaseGenTensorOps extends DslGenC {
   registerHeader("<string.h>")
   registerHeader("<cblas.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas")
+  registerDatastructures("heap"){
+    emit("char *heap = NULL;")
+  }
+  registerInit("heap_init") {
+    emit("heap = malloc(1024*1024);")
+  }
   registerTopLevelFunction("tensor_copy"){
     emit(
       """
@@ -150,12 +158,26 @@ trait BaseGenTensorOps extends DslGenC {
         |}
         |""".stripMargin)
   }
+  registerTopLevelFunction("bump_allocate") {
+    emit(
+      """
+        |static void *bump_allocate(size_t size) {
+        |   void *old_heap = heap;
+        |   heap += size;
+        |   return old_heap;
+        |}
+        |""".stripMargin
+    )
+  }
+
+  val is_tensor_new_ops = Set("tensor-new", "heap-offset")
 
   override def shallow(node: Node): Unit = node match {
-    case Node(s, "tensor-new", rhs, eff) =>
-      val manifest = rhs.head match {case Const(mani: Manifest[_]) => mani}
-      val dims = rhs.tail.map{case Const(i: Int) => i}
-      emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
+    case Node(s, op, Const(manifest: Manifest[_])::tail, eff) if is_tensor_new_ops(op)  =>
+      val dims = tail.map{case Const(i: Int) => i}
+      val allocator = if (op == "tensor-new") "malloc" else "bump_allocate"
+      emit(s"$allocator(${dims.product} * sizeof(${remap(manifest)}))")
+
     case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
       shallow(tensor)
@@ -253,8 +275,42 @@ trait BaseGenTensorOps extends DslGenC {
 abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] with TensorOps { q =>
   override val codegen = new BaseGenTensorOps {
     override val IR: q.type = q
+    override def init(g: Graph): Graph = {
+      val transformer = new MemoryPlanningTransformer
+      val newGraph = transformer.transform(g)
+      typeMap = transformer.newTypeMap
+      super.init(newGraph)
+    }
   }
   lazy val g: Graph = Adapter.program(Adapter.g.reify(x => Unwrap(wrapper(Wrap[A](x)))))
+}
+
+class MemoryPlanningTransformer extends Transformer {
+  g = Adapter.mkGraphBuilder()
+
+  lazy val newTypeMap: mutable.Map[Exp, Manifest[_]] = {
+    val newMap: mutable.Map[Exp, Manifest[_]] = typeMap.clone()
+    typeMap.foreach{
+      case (exp, mani) =>
+        symMap.get(exp) match {
+          case Some(value) => newMap(value) = mani
+          case None => newMap(exp) = mani
+        }
+    }
+    newMap
+  }
+
+  val symMap: mutable.Map[Exp, Exp] = new mutable.HashMap[Exp, Exp]()
+  override def transform(n: Node): Exp = n match {
+    case Node(s, "tensor-new", Const(mA: Manifest[_])::dims, _) =>
+      val exp = g.reflectWrite("heap-offset", Const(mA)::dims:_*)(STORE)
+      symMap(s) = exp
+      exp
+    case Node(s, _, _, _) =>
+      val newNode = super.transform(n)
+      symMap(s) = newNode
+      newNode
+  }
 }
 
 class MemoryPlanningTraverser extends Traverser {
