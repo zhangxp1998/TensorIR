@@ -11,6 +11,7 @@ import lms.core.utils.time
 import lms.macros.{RefinedManifest, SourceContext}
 
 import scala.collection.mutable
+import scala.lms.tutorial.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, MemoryEvent}
 
 trait Tensor[A] {
 
@@ -139,9 +140,11 @@ trait TensorOps { b: Base =>
 trait BaseGenTensorOps extends DslGenC {
   doRename = false
 //  val _shouldInline = shouldInline
+  var totalMemory: Int = 0
+  var allocationPlan: Map[Int, MemoryBlock] = Map()
   registerHeader("<string.h>")
   registerHeader("<cblas.h>")
-  registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas")
+  registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas", "-g")
   registerDatastructures("heap"){
     emit("char *heap = NULL;")
   }
@@ -173,10 +176,11 @@ trait BaseGenTensorOps extends DslGenC {
   val is_tensor_new_ops = Set("tensor-new", "heap-offset")
 
   override def shallow(node: Node): Unit = node match {
-    case Node(s, op, Const(manifest: Manifest[_])::tail, eff) if is_tensor_new_ops(op)  =>
+    case Node(s, "tensor-new", Const(manifest: Manifest[_])::tail, eff) =>
       val dims = tail.map{case Const(i: Int) => i}
-      val allocator = if (op == "tensor-new") "malloc" else "bump_allocate"
-      emit(s"$allocator(${dims.product} * sizeof(${remap(manifest)}))")
+      emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
+    case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::_, eff) =>
+      emit(s"(void*)(heap+${blk.begin} * sizeof(${remap(manifest)}))")
 
     case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
@@ -216,6 +220,12 @@ trait BaseGenTensorOps extends DslGenC {
       emit(", ")
       emit(byteSize.toString)
       emit(")))")
+    case Node(s, "heap-offset-copy", Const(manifest: Manifest[_])::tensor::Const(blk: MemoryBlock)::Const(dims: Seq[Int])::_, eff) =>
+      emit(s"((${remap(manifest)} *)memcpy(heap+${blk.begin} * sizeof(${remap(manifest)}), ")
+      shallow(tensor)
+      val byteSize = s"${dims.product} * sizeof(${remap(manifest)})"
+      emit(s", $byteSize))")
+
     case Node(s, "tensor-binary-broadcast", List(mA, tensor, Backend.Const(op: String), rhs, Backend.Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
       val loopCounter = "i" + s.n
@@ -276,17 +286,37 @@ abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] 
   override val codegen = new BaseGenTensorOps {
     override val IR: q.type = q
     override def init(g: Graph): Graph = {
-      val transformer = new MemoryPlanningTransformer
+      val graph = memoryPlanning(g)
+      super.init(graph)
+    }
+    def memoryPlanning(g: Graph): Graph = {
+      val traverser = new MemoryPlanningTraverser()
+      traverser(g)
+      val events = traverser.events.values
+      val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
+      events.foreach {
+        case e@Allocation(id, size) =>
+          scala.Console.println(e.toString + " => " + allocationPlan(id))
+        case e@Deallocation(id, size, afterSym) =>
+          scala.Console.println(e)
+      }
+
+
+      val transformer = new MemoryPlanningTransformer(allocationPlan)
       val newGraph = transformer.transform(g)
       typeMap = transformer.newTypeMap
-      super.init(newGraph)
+      newGraph
     }
   }
   lazy val g: Graph = Adapter.program(Adapter.g.reify(x => Unwrap(wrapper(Wrap[A](x)))))
 }
 
-class MemoryPlanningTransformer extends Transformer {
+class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) extends Transformer {
   g = Adapter.mkGraphBuilder()
+  val totalMemory: Int = {
+    val maxBlock = allocationPlan.values.maxBy(_.begin)
+    maxBlock.begin + maxBlock.size
+  }
 
   lazy val newTypeMap: mutable.Map[Exp, Manifest[_]] = {
     val newMap: mutable.Map[Exp, Manifest[_]] = typeMap.clone()
@@ -303,7 +333,11 @@ class MemoryPlanningTransformer extends Transformer {
   val symMap: mutable.Map[Exp, Exp] = new mutable.HashMap[Exp, Exp]()
   override def transform(n: Node): Exp = n match {
     case Node(s, "tensor-new", Const(mA: Manifest[_])::dims, _) =>
-      val exp = g.reflectWrite("heap-offset", Const(mA)::dims:_*)(STORE)
+      val exp = g.reflectWrite("heap-offset", Const(mA)::Const(allocationPlan(s.n))::dims:_*)(STORE)
+      symMap(s) = exp
+      exp
+    case Node(s, "tensor-copy", List(mA, tensor, dims), _) =>
+      val exp = g.reflectWrite("heap-offset-copy", mA, tensor, Const(allocationPlan(s.n)), dims)(STORE)
       symMap(s) = exp
       exp
     case Node(s, _, _, _) =>
@@ -323,12 +357,6 @@ class MemoryPlanningTraverser extends Traverser {
     override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
   }
 
-  class MemoryEvent {
-
-  }
-  case class Allocation(id: Int, size: Int) extends MemoryEvent
-  case class Deallocation(id: Int, size: Int, afterSym: Sym) extends MemoryEvent
-
   val requests = scala.collection.mutable.HashMap[Int, MemoryRequest]()
 
   lazy val events = {
@@ -342,7 +370,7 @@ class MemoryPlanningTraverser extends Traverser {
   }
   override def traverse(n: Node): Unit = {
     n match {
-      case Node(n, "tensor-new", _:: dims, _) =>
+      case Node(n, "tensor-new", Const(manifest: Manifest[_]):: dims, _) =>
         val size = dims.map{case Backend.Const(i: Int) => i}.product
         requests(n.n) = new MemoryRequest(getTime(), getTime(), n, size)
       case Node(n, "tensor-copy", _:: src :: dims :: Nil, _) =>
@@ -385,7 +413,7 @@ object Runer {
         println((tensor+tensor(0, 0, 0))(0, 1, 2))
         println(tensor2(0, 1, 2))
 
-        val mat1 = Tensor[Float](Seq(3, 3))
+        val mat1 = Tensor.fill[Float]((Seq(3, 3)), 0)
         mat1(Seq(0, 0)) = 1.0
         mat1(Seq(1, 1)) = 1.0
         mat1(Seq(2, 2)) = 1.0
@@ -398,10 +426,6 @@ object Runer {
       }
     }
 
-    val traverser = new MemoryPlanningTraverser()
-    Adapter.typeMap = new scala.collection.mutable.HashMap[lms.core.Backend.Exp, Manifest[_]]()
-    traverser(dslDriver.g)
-    traverser.events.values.foreach(println)
 
     dslDriver.eval("5")
   }
