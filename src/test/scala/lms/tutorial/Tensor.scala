@@ -144,12 +144,13 @@ trait BaseGenTensorOps extends DslGenC {
   var allocationPlan: Map[Int, MemoryBlock] = Map()
   registerHeader("<string.h>")
   registerHeader("<cblas.h>")
+  registerHeader("<sys/mman.h>", "<unistd.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas", "-g")
   registerDatastructures("heap"){
     emit("char *heap = NULL;")
   }
   registerInit("heap_init") {
-    emit("heap = malloc(1024*1024);")
+    emit("heap = get_mem(1024*1024*1024);")
   }
   registerTopLevelFunction("tensor_copy"){
     emit(
@@ -171,6 +172,18 @@ trait BaseGenTensorOps extends DslGenC {
         |}
         |""".stripMargin
     )
+  }
+  registerTopLevelFunction("get_mem") {
+    emit(
+      """
+        |void *get_mem(size_t size) {
+        |  size_t page_size = getpagesize();
+        |  size = (size + page_size - 1) / page_size * page_size;
+        |  void *p = mmap(NULL, size, PROT_READ | PROT_WRITE,
+        |                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        |  return p;
+        |}
+        |""".stripMargin)
   }
 
   val is_tensor_new_ops = Set("tensor-new", "heap-offset")
