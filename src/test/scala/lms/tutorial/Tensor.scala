@@ -33,7 +33,7 @@ trait TensorOps { b: Base =>
     }
   }
 
-  implicit class TensorOps[A: Manifest](tensor: Rep[Tensor[A]]) {
+  implicit class TensorOps[A: Manifest: Numeric](tensor: Rep[Tensor[A]]) {
     lazy val dims: Seq[Int] = Adapter.g.findDefinition(Unwrap(tensor)) match {
       case Some(Node(n, "tensor-new", _:: dims, _)) => dims.map{case Backend.Const(i: Int) => i}
       case Some(Node(n, "tensor-copy", _:: _ :: dims :: Nil, _)) => dims match {case Backend.Const(seq: Seq[Int]) => seq}
@@ -59,7 +59,7 @@ trait TensorOps { b: Base =>
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Backend.Const(idx), Unwrap(newVal), Backend.Const(dims))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(tensor)))
     }
-    private def unsafe_apply(idx: Rep[Int]): Rep[A] = {
+    def unsafe_apply(idx: Rep[Int]): Rep[A] = {
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(idx))
       Wrap[A](Adapter.g.reflectRead("tensor-apply", unwrapped_xs:_*)(Unwrap(tensor)))
@@ -92,10 +92,40 @@ trait TensorOps { b: Base =>
 
     private def binary_broadcast(op: String, rhs: Rep[A]): Rep[Tensor[A]] = {
       val mA = Backend.Const(manifest[A])
-      val result = tensor.copy()
+      val result: Rep[Tensor[A]] = tensor.copy()
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result), Backend.Const(op), Unwrap(rhs), Backend.Const(dims))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-binary-broadcast", unwrapped_xs:_*)(Unwrap(result)))
       result
+    }
+
+    def checkDims(rhs_dims: Seq[Int]): Unit = {
+      if (rhs_dims != dims) {
+        throw new RuntimeException(s"$rhs_dims is not the same as $dims")
+      }
+    }
+    private def tensor_binary(rhs: Rep[Tensor[A]], op: String): Rep[Tensor[A]] = {
+      checkDims(rhs.dims)
+      val res = Tensor[A](dims)
+      res.mapInplaceWithFlatIdx((_, idx) => {
+        val a: Rep[A] = unsafe_apply(idx)
+        val b: Rep[A] = rhs.unsafe_apply(idx)
+        val c: Rep[A] = Wrap[A](Adapter.g.reflect("binary_op", Backend.Const(op), Unwrap(a), Unwrap(b)))
+        c
+      }
+      )
+      res
+    }
+    def add(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+      tensor_binary(rhs, "+")
+    }
+    def sub(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+      tensor_binary(rhs, "-")
+    }
+    def mul(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+      tensor_binary(rhs, "*")
+    }
+    def div(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+      tensor_binary(rhs, "/")
     }
 
     def +(rhs: Rep[A]): Rep[Tensor[A]] = {
@@ -202,7 +232,9 @@ trait BaseGenTensorOps extends DslGenC {
     case Node(s, "tensor-apply", List(_, tensor, idx), _) =>
       // Comming from unsafe_apply
       shallow(tensor)
-      emit(s"[${shallow(idx)}]")
+      emit("[")
+      shallow(idx)
+      emit("]")
     case Node(s, "tensor-update", List(_, tensor, Const(idx: Seq[Int]), newVal, Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
       shallow(tensor)
@@ -274,6 +306,10 @@ trait BaseGenTensorOps extends DslGenC {
       emit("""\n", """) // Should look like <BEGIN>\n", <END>
       shallow(x)
       emit(")")
+    case Node(s, "binary_op", Backend.Const(op: String)::a::b::Nil, _) =>
+      shallow(a)
+      emit(op)
+      shallow(b)
 
     case _ => super.shallow(node)
   }
@@ -423,6 +459,7 @@ object Runer {
 
         println(tensor(0, 1, 2))
         println(tensor.copy()(0, 1, 2))
+        println((tensor add tensor)(0, 0, 0))
         println((tensor+tensor(0, 0, 0))(0, 1, 2))
         println(tensor2(0, 1, 2))
 
