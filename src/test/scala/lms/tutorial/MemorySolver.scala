@@ -18,6 +18,8 @@ object MemorySolver {
       events.filter(_.isInstanceOf[Allocation]).map{case Allocation(id, size) => (id, size)}.toMap[Int, Int]
 
     val cap = MPIntVar("cap", 0 until maxsize)
+    var lower_bound = 0
+    var sum = 0
     for (event <- events) {
       event match {
         case Allocation(id, size) =>
@@ -32,8 +34,11 @@ object MemorySolver {
           add(x + size <:= cap)
           activeBlocks += id
           blockVars(id) = x
+          sum += size
+          lower_bound = math.max(lower_bound, sum)
         case Deallocation(id, size, _) =>
           activeBlocks -= id
+          sum -= size
         case _ =>
       }
     }
@@ -42,7 +47,7 @@ object MemorySolver {
     val allocationPlan = new mutable.TreeMap[Int, MemoryBlock]()
     try {
       start()
-      println(s"objective: $objectiveValue")
+      println(s"objective: ${math.round(objectiveValue)} lower bound: $lower_bound")
 
 
       for ((id, blk_var) <- blockVars) {
