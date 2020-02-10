@@ -306,7 +306,7 @@ abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] 
       val traverser = new MemoryPlanningTraverser()
       traverser(g)
       val events = traverser.events.values
-      val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
+      val allocationPlan = MemorySolver.solve(events.toSeq)
       events.foreach {
         case e@Allocation(id, size) =>
           scala.Console.println(e.toString + " => " + allocationPlan(id))

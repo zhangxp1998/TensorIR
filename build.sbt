@@ -14,6 +14,12 @@ libraryDependencies += "org.scala-lang" % "scala-library" % scalaVersion.value %
 
 libraryDependencies += "org.scala-lang" % "scala-reflect" % scalaVersion.value % "compile"
 
+libraryDependencies ++= Seq(
+    "com.github.vagmcs" %% "optimus" % "3.2.0",
+    "com.github.vagmcs" %% "optimus-solver-oj" % "3.2.0",
+    "com.github.vagmcs" %% "optimus-solver-lp" % "3.2.0"
+)
+
 autoCompilerPlugins := true
 
 val paradiseVersion = "2.1.0"
