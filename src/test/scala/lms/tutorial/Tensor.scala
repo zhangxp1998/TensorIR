@@ -1,4 +1,4 @@
-package scala.lms.tutorial
+package lms.tutorial
 
 
 import lms.core._
@@ -7,48 +7,48 @@ import lms.core.stub._
 import lms.core.Backend._
 import lms.core.stub.Adapter.typeMap
 import lms.core.virtualize
-import lms.core.utils.time
 import lms.macros.{RefinedManifest, SourceContext}
 
 import scala.collection.mutable
 import scala.lms.tutorial.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, MemoryEvent}
 
-trait Tensor[A] {
 
-}
-
-trait TensorOps { b: Base =>
+trait TensorOps extends Base with Equal {
   object Tensor {
-    def apply[A: Manifest](xs: Seq[Int])(implicit pos: SourceContext): Rep[Tensor[A]] = {
-      val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA) ++ xs.map(i => Backend.Const(i))
-      Wrap[Tensor[A]](Adapter.g.reflectWrite("tensor-new", unwrapped_xs:_*)(STORE))
+    def apply[A: Manifest](xs: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
+      new Tensor(xs)
     }
-    def fill[A: Manifest](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Rep[Tensor[A]] = {
+    def fill[A: Manifest](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Tensor[A] = {
       val tensor = Tensor[A](dims)
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(fillVal), Backend.Const(dims))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor.data), Unwrap(fillVal), Backend.Const(dims))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", unwrapped_xs:_*)(Unwrap(tensor)))
       tensor
     }
-  }
 
-  implicit class TensorOps[A: Manifest: Numeric](tensor: Rep[Tensor[A]]) {
-    lazy val dims: Seq[Int] = Adapter.g.findDefinition(Unwrap(tensor)) match {
-      case Some(Node(n, "tensor-new", _:: dims, _)) => dims.map{case Backend.Const(i: Int) => i}
-      case Some(Node(n, "tensor-copy", _:: _ :: dims :: Nil, _)) => dims match {case Backend.Const(seq: Seq[Int]) => seq}
+    def getManifest[A: Manifest](): Manifest[A] = {
+      manifest[A]
     }
-    def checkIdx(idx: Seq[Int]) = {
+  }
+  class Tensor[A: Manifest] (val dims: Seq[Int], var data: Rep[Array[A]]) {
+    def this(dims: Seq[Int]) {
+      this(dims, null)
+      data = {
+        val mA = Backend.Const(manifest[A])
+        val unwrapped_xs: Seq[Backend.Def] = Seq(mA) ++ dims.map(i => Backend.Const(i))
+        Wrap[Array[A]](Adapter.g.reflectWrite("tensor-new", unwrapped_xs:_*)(STORE))
+      }
+    }
+    def checkIdx(idx: Seq[Int]): Unit = {
       assert(dims.length == idx.length, s"Tensor index $idx does not match dimension $dims")
       assert(idx.zip(dims).forall{case (a, b) => a < b}, s"Tensor index $idx is out of bounds for dimension $dims")
     }
     def apply(idx: Int*): Rep[A] = {
       checkIdx(idx)
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Backend.Const(idx), Backend.Const(dims))
-      Wrap[A](Adapter.g.reflectRead("tensor-apply", unwrapped_xs:_*)(Unwrap(tensor)))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(idx), Backend.Const(dims))
+      Wrap[A](Adapter.g.reflectRead("tensor-apply", unwrapped_xs:_*)(Unwrap(data)))
     }
-
     def update(idx: Seq[Int], newVal: A): Unit = {
       update(idx, Const(newVal))
     }
@@ -56,21 +56,20 @@ trait TensorOps { b: Base =>
     def update(idx: Seq[Int], newVal: Rep[A]): Unit = {
       checkIdx(idx)
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Backend.Const(idx), Unwrap(newVal), Backend.Const(dims))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(tensor)))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(idx), Unwrap(newVal), Backend.Const(dims))
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
     }
     def unsafe_apply(idx: Rep[Int]): Rep[A] = {
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(idx))
-      Wrap[A](Adapter.g.reflectRead("tensor-apply", unwrapped_xs:_*)(Unwrap(tensor)))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(idx))
+      Wrap[A](Adapter.g.reflectRead("tensor-apply", unwrapped_xs:_*)(Unwrap(data)))
     }
 
     private def unsafe_update(idx: Rep[Int], newVal: Rep[A]): Unit = {
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(idx), Unwrap(newVal))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(tensor)))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(idx), Unwrap(newVal))
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
     }
-
     def mapInplace(f: Rep[A] => Rep[A]): Unit = {
       val totalSize = dims.product
       for(i <- 0 until totalSize: Rep[Range]) {
@@ -83,17 +82,19 @@ trait TensorOps { b: Base =>
         unsafe_update(i, f(unsafe_apply(i), i))
       }
     }
-
-    def copy(): Rep[Tensor[A]] = {
+    def copy(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Backend.Const(dims))
-      Wrap[Tensor[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(tensor)))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
+      new Tensor(
+        dims,
+        Wrap[Array[A]](Adapter.g.reflectEffect("tensor-copy", unwrapped_xs:_*)(Unwrap(data))(STORE))
+      )
     }
 
-    private def binary_broadcast(op: String, rhs: Rep[A]): Rep[Tensor[A]] = {
+    private def binary_broadcast(op: String, rhs: Rep[A]): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
-      val result: Rep[Tensor[A]] = tensor.copy()
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result), Backend.Const(op), Unwrap(rhs), Backend.Const(dims))
+      val result: Tensor[A] = copy()
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result.data), Backend.Const(op), Unwrap(rhs), Backend.Const(dims))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-binary-broadcast", unwrapped_xs:_*)(Unwrap(result)))
       result
     }
@@ -103,9 +104,9 @@ trait TensorOps { b: Base =>
         throw new RuntimeException(s"$rhs_dims is not the same as $dims")
       }
     }
-    private def tensor_binary(rhs: Rep[Tensor[A]], op: String): Rep[Tensor[A]] = {
+    private def tensor_binary(rhs: Tensor[A], op: String): Tensor[A] = {
       checkDims(rhs.dims)
-      val res = Tensor[A](dims)
+      val res = new Tensor[A](dims)
       res.mapInplaceWithFlatIdx((_, idx) => {
         val a: Rep[A] = unsafe_apply(idx)
         val b: Rep[A] = rhs.unsafe_apply(idx)
@@ -115,33 +116,34 @@ trait TensorOps { b: Base =>
       )
       res
     }
-    def add(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+
+    def add(rhs: Tensor[A]): Tensor[A] = {
       tensor_binary(rhs, "+")
     }
-    def sub(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+    def sub(rhs: Tensor[A]): Tensor[A] = {
       tensor_binary(rhs, "-")
     }
-    def mul(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+    def mul(rhs: Tensor[A]): Tensor[A] = {
       tensor_binary(rhs, "*")
     }
-    def div(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+    def div(rhs: Tensor[A]): Tensor[A] = {
       tensor_binary(rhs, "/")
     }
 
-    def +(rhs: Rep[A]): Rep[Tensor[A]] = {
+    def +(rhs: Rep[A]): Tensor[A] = {
       binary_broadcast("+=", rhs)
     }
-    def -(rhs: Rep[A]): Rep[Tensor[A]] = {
+    def -(rhs: Rep[A]): Tensor[A] = {
       binary_broadcast("-=", rhs)
     }
-    def *(rhs: Rep[A]): Rep[Tensor[A]] = {
+    def *(rhs: Rep[A]): Tensor[A] = {
       binary_broadcast("*=", rhs)
     }
-    def /(rhs: Rep[A]): Rep[Tensor[A]] = {
+    def /(rhs: Rep[A]): Tensor[A] = {
       binary_broadcast("/=", rhs)
     }
 
-    def matmul(rhs: Rep[Tensor[A]]): Rep[Tensor[A]] = {
+    def matmul(rhs: Tensor[A]): Tensor[A] = {
       val rhs_dims: Seq[Int] = rhs.dims
       val lhs_dims: Seq[Int] = dims
       val mA = Backend.Const(manifest[A])
@@ -160,10 +162,13 @@ trait TensorOps { b: Base =>
 
       // vector-vector multiplication
       val result = Tensor[A](Seq(M, N))
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor), Unwrap(rhs), Unwrap(result), Backend.Const(Seq(M, K, N)))
-      Wrap[Unit](Adapter.g.reflectEffect("matrix-multiply", unwrapped_xs:_*)(Unwrap(tensor), Unwrap(rhs))(Unwrap(result)))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(rhs.data), Unwrap(result.data), Backend.Const(Seq(M, K, N)))
+      Wrap[Unit](Adapter.g.reflectEffect("matrix-multiply", unwrapped_xs:_*)(Unwrap(data), Unwrap(rhs.data))(Unwrap(result.data)))
       result
     }
+  }
+  def println(x: Tensor[_]): Unit = {
+    println(x.data)
   }
 }
 
@@ -223,7 +228,7 @@ trait BaseGenTensorOps extends DslGenC {
       val dims = tail.map{case Const(i: Int) => i}
       emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
     case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::_, eff) =>
-      emit(s"(void*)(heap+${blk.begin} * sizeof(${remap(manifest)}))")
+      emit(s"((${remap(manifest)}*)(heap+${blk.begin} * sizeof(${remap(manifest)})))")
 
     case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
@@ -316,7 +321,7 @@ trait BaseGenTensorOps extends DslGenC {
   def format(x: Def): String = x match {
     case exp: Exp => exp match {
       case s@Sym(_) => typeMap(s).toString match {
-        case m if m.contains("scala.lms.tutorial.Tensor[") =>
+        case m if m.matches("""Array\[.*\]""") =>
           "%p"
         case "Float" =>
           "%f"
