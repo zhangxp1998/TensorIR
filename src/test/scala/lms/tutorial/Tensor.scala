@@ -105,7 +105,7 @@ trait TensorOps extends Base with Equal {
     }
     private def tensor_binary(rhs: Tensor[A], op: String): Tensor[A] = {
       checkDims(rhs.dims)
-      val res = new Tensor[A](dims)
+      val res = copy()
       res.tensor_binary_inplace(rhs, op)
       res
     }
