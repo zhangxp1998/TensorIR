@@ -1,0 +1,105 @@
+package lms.tutorial
+
+import scala.util.continuations._
+import scala.util.continuations
+import scala.language.implicitConversions
+import lms.core._
+import lms.util._
+import lms.core.stub._
+import lms.core.Backend._
+import lms.core.stub.Adapter.typeMap
+import lms.core.virtualize
+import lms.macros.{RefinedManifest, SourceContext}
+import lms.tutorial.TensorOps
+
+trait Diff {
+  type diff = cps[Unit]
+}
+
+trait TensorDifferentiation extends TensorOps {
+  class TensorR[A: Manifest: Numeric](val x: Tensor[A], var d: Tensor[A]) extends Diff{
+    def +(that: Rep[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR((x.+(that)): Tensor[A], Tensor.zero[A](x.dims))
+      k(y)
+      this.d += y.d
+    }
+    def *(that: TensorR[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x mul that.x, Tensor.zero[A](x.dims))
+      k(y)
+      that.d += y.d mul this.x
+      this.d += y.d mul that.x
+    }
+    def *(that: A): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x * that, Tensor.zero[A](x.dims))
+      k(y)
+      this.d += y.d * that
+    }
+  }
+}
+
+object NumR {
+  implicit def toNumR(x: Double): NumR = new NumR(x, 0)
+  def grad(f: NumR => NumR @cps[Unit])(x: Double): Double = {
+    val z = new NumR(x, 0.0)
+    reset {f(z).d = 1.0}
+    z.d
+  }
+}
+
+class NumR(val x: Double, var d: Double) extends Diff {
+
+  def +(that: NumR): NumR @diff = shift { k: (NumR => Unit) =>
+    val y = new NumR(x+that.x, 0)
+    k(y)
+    that.d += y.d
+    this.d += y.d
+  }
+
+  def -(that: NumR): NumR @diff = shift { k: (NumR => Unit) =>
+    val y = new NumR(x-that.x, 0)
+    k(y)
+    that.d -= y.d
+    this.d += y.d
+  }
+
+  def *(that: NumR): NumR @diff = shift { k: (NumR => Unit) =>
+    val y = new NumR(x*that.x, 0)
+    k(y)
+    that.d += y.d * this.x
+    this.d += y.d * that.x
+  }
+
+  def /(that: NumR): NumR @diff = shift { k: (NumR => Unit) =>
+    val y = new NumR(x/that.x, 0)
+    k(y)
+    that.d -= y.d * this.x/(that.x*that.x)
+    this.d += y.d / that.x
+  }
+}
+
+
+
+
+object TensorDifferentiation {
+  def main(args: Array[String]): Unit = {
+    val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val x = Tensor.fill[Float](Seq(2), 1)
+        def grad(f: TensorR[Float] => TensorR[Float] @cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
+          val z = new TensorR[Float](x, Tensor.zero[Float](x.dims))
+          reset({
+            val res = f(z)
+            res.d = Tensor.fill[Float](res.x.dims, 1)
+          })
+          z.d
+        }
+        val gradient = grad(a => a*2)(x)
+        println(gradient(0))
+        println(gradient(1))
+      }
+    }
+
+
+    dslDriver.eval("5")
+  }
+}
