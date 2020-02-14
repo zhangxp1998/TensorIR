@@ -406,7 +406,8 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) exten
       symMap(s) = exp
       exp
     case Node(s, "tensor-copy", List(mA, tensor, dims), eff) =>
-      val exp = g.reflectEffect("heap-offset-copy", mA, tensor, Const(allocationPlan(s.n)), dims)(eff.rkeys.toSeq: _*)(eff.wkeys.toSeq: _*)
+      val src = symMap(tensor.asInstanceOf[Sym])
+      val exp = g.reflectEffect("heap-offset-copy", mA, src, Const(allocationPlan(s.n)), dims)(eff.rkeys.map(transform).toSeq: _*)(eff.wkeys.map(transform).toSeq: _*)
       symMap(s) = exp
       exp
     case Node(s, _, _, _) =>
