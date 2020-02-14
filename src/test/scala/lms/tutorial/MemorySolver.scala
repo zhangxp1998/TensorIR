@@ -1,4 +1,4 @@
-package scala.lms.tutorial
+package lms.tutorial
 
 import optimus.optimization._
 import optimus.optimization.enums.SolverLib
