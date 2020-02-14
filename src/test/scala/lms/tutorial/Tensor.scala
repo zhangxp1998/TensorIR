@@ -15,22 +15,21 @@ import scala.lms.tutorial.StagedMemoryAllocator.{Allocation, Deallocation, Memor
 
 trait TensorOps extends Base with Equal {
   object Tensor {
-    def apply[A: Manifest](xs: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
+    def apply[A: Manifest: Numeric](xs: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
       new Tensor(xs)
     }
-    def fill[A: Manifest](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Tensor[A] = {
+    def fill[A: Manifest: Numeric](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Tensor[A] = {
       val tensor = Tensor[A](dims)
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor.data), Unwrap(fillVal), Backend.Const(dims))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", unwrapped_xs:_*)(Unwrap(tensor)))
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", unwrapped_xs:_*)(Unwrap(tensor.data)))
       tensor
     }
-
-    def getManifest[A: Manifest](): Manifest[A] = {
-      manifest[A]
+    def zero[A: Manifest: Numeric](dims: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
+      Tensor.fill[A](dims, 0.asInstanceOf[A])
     }
   }
-  class Tensor[A: Manifest] (val dims: Seq[Int], var data: Rep[Array[A]]) {
+  class Tensor[A: Manifest: Numeric] (val dims: Seq[Int], var data: Rep[Array[A]]) {
     def this(dims: Seq[Int]) {
       this(dims, null)
       data = {
@@ -95,7 +94,7 @@ trait TensorOps extends Base with Equal {
       val mA = Backend.Const(manifest[A])
       val result: Tensor[A] = copy()
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result.data), Backend.Const(op), Unwrap(rhs), Backend.Const(dims))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-binary-broadcast", unwrapped_xs:_*)(Unwrap(result)))
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-binary-broadcast", unwrapped_xs:_*)(Unwrap(result.data)))
       result
     }
 
@@ -107,14 +106,17 @@ trait TensorOps extends Base with Equal {
     private def tensor_binary(rhs: Tensor[A], op: String): Tensor[A] = {
       checkDims(rhs.dims)
       val res = new Tensor[A](dims)
-      res.mapInplaceWithFlatIdx((_, idx) => {
+      res.tensor_binary_inplace(rhs, op)
+      res
+    }
+    private def tensor_binary_inplace(rhs: Tensor[A], op: String): Unit = {
+      mapInplaceWithFlatIdx((_, idx) => {
         val a: Rep[A] = unsafe_apply(idx)
         val b: Rep[A] = rhs.unsafe_apply(idx)
-        val c: Rep[A] = Wrap[A](Adapter.g.reflect("binary_op", Backend.Const(op), Unwrap(a), Unwrap(b)))
+        val c: Rep[A] = Wrap[A](Adapter.g.reflect(op, Unwrap(a), Unwrap(b)))
         c
       }
       )
-      res
     }
 
     def add(rhs: Tensor[A]): Tensor[A] = {
@@ -128,6 +130,19 @@ trait TensorOps extends Base with Equal {
     }
     def div(rhs: Tensor[A]): Tensor[A] = {
       tensor_binary(rhs, "/")
+    }
+
+    def +=(rhs: Tensor[A]): Unit = {
+      tensor_binary_inplace(rhs, "+")
+    }
+    def -=(rhs: Tensor[A]): Unit = {
+      tensor_binary_inplace(rhs, "-")
+    }
+    def *=(rhs: Tensor[A]): Unit = {
+      tensor_binary_inplace(rhs, "*")
+    }
+    def /=(rhs: Tensor[A]): Unit = {
+      tensor_binary_inplace(rhs, "/")
     }
 
     def +(rhs: Rep[A]): Tensor[A] = {
@@ -373,12 +388,12 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) exten
   }
 
   lazy val newTypeMap: mutable.Map[Exp, Manifest[_]] = {
-    val newMap: mutable.Map[Exp, Manifest[_]] = typeMap.clone()
+    val newMap: mutable.Map[Exp, Manifest[_]] = new mutable.HashMap[Exp, Manifest[_]]
     typeMap.foreach{
       case (exp, mani) =>
         symMap.get(exp) match {
           case Some(value) => newMap(value) = mani
-          case None => newMap(exp) = mani
+          case None => newMap.getOrElseUpdate(exp, mani)
         }
     }
     newMap
@@ -390,8 +405,8 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) exten
       val exp = g.reflectWrite("heap-offset", Const(mA)::Const(allocationPlan(s.n))::dims:_*)(STORE)
       symMap(s) = exp
       exp
-    case Node(s, "tensor-copy", List(mA, tensor, dims), _) =>
-      val exp = g.reflectWrite("heap-offset-copy", mA, tensor, Const(allocationPlan(s.n)), dims)(STORE)
+    case Node(s, "tensor-copy", List(mA, tensor, dims), eff) =>
+      val exp = g.reflectEffect("heap-offset-copy", mA, tensor, Const(allocationPlan(s.n)), dims)(eff.rkeys.toSeq: _*)(eff.wkeys.toSeq: _*)
       symMap(s) = exp
       exp
     case Node(s, _, _, _) =>
