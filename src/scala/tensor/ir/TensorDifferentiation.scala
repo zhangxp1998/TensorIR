@@ -62,10 +62,17 @@ trait TensorDifferentiation extends TensorOps {
 
 object NumR {
   implicit def toNumR(x: Double): NumR = new NumR(x, 0)
+  def apply(x: Double): NumR = toNumR(x)
   def grad(f: NumR => NumR @cps[Unit])(x: Double): Double = {
     val z = new NumR(x, 0.0)
     reset {f(z).d = 1.0}
     z.d
+  }
+  def grad(f: (NumR, NumR) => NumR @cps[Unit])(x: Double, y: Double): (Double, Double) = {
+    val z1 = new NumR(x, 0.0)
+    val z2 = new NumR(y, 0.0)
+    reset {f(z1, z2).d = 1.0}
+    (z1.d, z2.d)
   }
 }
 
