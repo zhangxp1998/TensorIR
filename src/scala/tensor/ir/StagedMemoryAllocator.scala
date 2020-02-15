@@ -1,11 +1,8 @@
-package scala.lms.tutorial
-
-import java.util
+package tensor.ir
 
 import lms.core.Backend.Sym
 
 import scala.collection.mutable
-
 
 object StagedMemoryAllocator {
   class MemoryEvent {

@@ -1,16 +1,13 @@
-package lms.tutorial
+package tensor.ir
 
-
-import lms.core._
-import lms.util._
-import lms.core.stub._
 import lms.core.Backend._
+import lms.core._
 import lms.core.stub.Adapter.typeMap
-import lms.core.virtualize
-import lms.macros.{RefinedManifest, SourceContext}
+import lms.core.stub._
+import lms.macros.SourceContext
+import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, MemoryEvent}
 
 import scala.collection.mutable
-import scala.lms.tutorial.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, MemoryEvent}
 
 
 trait TensorOps extends Base with Equal {

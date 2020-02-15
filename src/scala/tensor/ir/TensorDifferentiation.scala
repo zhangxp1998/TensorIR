@@ -1,16 +1,8 @@
-package lms.tutorial
+package tensor.ir
 
-import scala.util.continuations._
-import scala.util.continuations
 import scala.language.implicitConversions
-import lms.core._
-import lms.util._
-import lms.core.stub._
-import lms.core.Backend._
-import lms.core.stub.Adapter.typeMap
-import lms.core.virtualize
-import lms.macros.{RefinedManifest, SourceContext}
-import lms.tutorial.TensorOps
+import scala.util.continuations._
+import lms.macros.SourceContext
 
 trait Diff {
   type diff = cps[Unit]

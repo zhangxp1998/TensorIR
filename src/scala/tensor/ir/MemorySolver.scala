@@ -1,12 +1,11 @@
-package lms.tutorial
+package tensor.ir
 
-import optimus.optimization._
 import optimus.optimization.enums.SolverLib
 import optimus.optimization.model.{MPBinaryVar, MPIntVar}
+import optimus.optimization._
+import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, MemoryEvent}
 
 import scala.collection.mutable
-import scala.lms.tutorial.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, MemoryEvent}
-
 
 object MemorySolver {
   def solve(events: Seq[MemoryEvent]): Map[Int, MemoryBlock] = {
