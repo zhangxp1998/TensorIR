@@ -20,6 +20,9 @@ object StagedMemoryAllocator {
 
     freelist.put(maxsize, mutable.Set(MemoryBlock(0, maxsize)))
 
+    var mem_used = 0;
+    var min_mem = 0;
+
     val allocationPlan = new mutable.TreeMap[Int, MemoryBlock]()
     events.foreach {
       case Allocation(id, size) =>
@@ -36,6 +39,8 @@ object StagedMemoryAllocator {
           list -= block
           list += remain
         }
+        mem_used += size
+        min_mem = Math.max(mem_used, min_mem)
 
       case Deallocation(id, size, afterSym) =>
         var block = allocationPlan(id)
@@ -60,7 +65,10 @@ object StagedMemoryAllocator {
           }
         }
         freelist.getOrElseUpdate(block.size, mutable.Set()).add(block)
+        mem_used -= size
     }
+    val lastBlk = allocationPlan.values.maxBy(_.begin)
+    println(s"Optimal: $min_mem Actual: ${lastBlk.begin + lastBlk.size}")
     allocationPlan.toMap
   }
 }
