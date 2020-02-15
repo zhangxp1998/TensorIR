@@ -18,9 +18,39 @@ trait Diff {
 
 trait TensorDifferentiation extends TensorOps {
   class TensorR[A: Manifest: Numeric](val x: Tensor[A], var d: Tensor[A]) extends Diff{
+    // Single element broadcast operations
     def +(that: Rep[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR((x.+(that)): Tensor[A], Tensor.zero[A](x.dims))
+      val y = new TensorR((x + that): Tensor[A], Tensor.zero[A](x.dims))
       k(y)
+      this.d += y.d
+    }
+    def -(that: Rep[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR((x - that): Tensor[A], Tensor.zero[A](x.dims))
+      k(y)
+      this.d += y.d
+    }
+    def *(that: Rep[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x * that, Tensor.zero[A](x.dims))
+      k(y)
+      this.d += y.d * that
+    }
+    def /(that: Rep[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x / that, Tensor.zero[A](x.dims))
+      k(y)
+      this.d += y.d / that
+    }
+
+    // Tensor-Tensor element wise operations
+    def +(that: TensorR[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x add that.x, Tensor.zero[A](x.dims))
+      k(y)
+      that.d += y.d
+      this.d += y.d
+    }
+    def -(that: TensorR[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x sub that.x, Tensor.zero[A](x.dims))
+      k(y)
+      that.d -= y.d
       this.d += y.d
     }
     def *(that: TensorR[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
@@ -29,10 +59,11 @@ trait TensorDifferentiation extends TensorOps {
       that.d += y.d mul this.x
       this.d += y.d mul that.x
     }
-    def *(that: A): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x * that, Tensor.zero[A](x.dims))
+    def /(that: TensorR[A]): TensorR[A] @diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x mul that.x, Tensor.zero[A](x.dims))
       k(y)
-      this.d += y.d * that
+      that.d -= y.d mul this.x div (that.x mul that.x)
+      this.d += y.d div that.x
     }
   }
 }
@@ -93,7 +124,7 @@ object TensorDifferentiation {
           })
           z.d
         }
-        val gradient = grad(a => a*2)(x)
+        val gradient = grad(a => a*a*a)(x)
         println(gradient(0))
         println(gradient(1))
       }
