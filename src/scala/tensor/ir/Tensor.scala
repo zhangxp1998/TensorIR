@@ -189,7 +189,7 @@ trait BaseGenTensorOps extends DslGenC {
 //  val _shouldInline = shouldInline
   var totalMemory: Int = 0
   var allocationPlan: Map[Int, MemoryBlock] = Map()
-  registerHeader("<string.h>")
+  registerHeader("<string.h>", "<algorithm>")
   registerHeader("<cblas.h>")
   registerHeader("<sys/mman.h>", "<unistd.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas", "-g")
@@ -197,7 +197,7 @@ trait BaseGenTensorOps extends DslGenC {
     emit("char *heap = NULL;")
   }
   registerInit("heap_init") {
-    emit("heap = get_mem(1024*1024*1024);")
+    emit("heap = (char*)get_mem(1024*1024*1024);")
   }
   registerTopLevelFunction("tensor_copy"){
     emit(
@@ -265,12 +265,12 @@ trait BaseGenTensorOps extends DslGenC {
       shallow(newVal)
     case Node(s, "tensor-fill", List(mA, tensor, fillVal, Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
-      val loopCounter = "i" + s.n
-      emitln(s"for (int $loopCounter = 0; $loopCounter < $totalSize; $loopCounter ++) {")
+      emit("std::fill(")
       shallow(tensor)
-      emitln(s"[$loopCounter] = ")
-      shallow(fillVal)
-      emitln(";}")
+      emit(", ")
+      shallow(tensor)
+      emit(s" + $totalSize, ${quote(fillVal)})")
+
 
     case Node(s, "tensor-copy", List(mA, tensor, Const(dims: Seq[Int])), _) =>
       val manifest = mA match {case Const(mani: Manifest[_]) => mani}
@@ -323,10 +323,6 @@ trait BaseGenTensorOps extends DslGenC {
       emit("""\n", """) // Should look like <BEGIN>\n", <END>
       shallow(x)
       emit(")")
-    case Node(s, "binary_op", Backend.Const(op: String)::a::b::Nil, _) =>
-      shallow(a)
-      emit(op)
-      shallow(b)
 
     case _ => super.shallow(node)
   }
