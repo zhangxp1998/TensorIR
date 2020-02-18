@@ -1,5 +1,7 @@
 package tensor.ir
 
+import com.sun.xml.internal.xsom.impl.scd.Iterators.Adapter
+
 import scala.language.implicitConversions
 import scala.util.continuations._
 import lms.macros.SourceContext
@@ -44,8 +46,15 @@ trait TensorDifferentiation extends TensorOps {
     }
   }
 
-  class TensorR[A: Manifest : Numeric](val x: Tensor[A], var d: Tensor[A]) extends Diff {
+  class TensorR[A: Manifest : Numeric](recompute: => Tensor[A], var d: Tensor[A], val shouldRecompute: Boolean = false) extends Diff {
     // Single element broadcast operations
+    lazy val cache: Tensor[A] = recompute
+    def x: Tensor[A] = if (shouldRecompute) {
+      recompute
+    }else {
+      cache
+    }
+
     def +(that: Rep[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val y = new TensorR((x + that): Tensor[A], Tensor.zero[A](x.dims))
       k(y)
@@ -161,17 +170,20 @@ object TensorDifferentiation {
   def main(args: Array[String]): Unit = {
     val dslDriver = new TensorDriverC[String, Unit] with TensorDifferentiation {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val x = Tensor.fill[Float](Seq(2), 1)
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
           val z = new TensorR[Float](x, Tensor.zero[Float](x.dims))
           reset({
             val res = f(z)
             res.d = Tensor.fill[Float](res.x.dims, 1)
+            val a: Tensor[Float] = res.x
+            println(a(0))
+            println(a(1))
           })
           z.d
         }
 
+        val x = Tensor.fill[Float](Seq(2), 2)
         val gradient = grad(a => a * a * a)(x)
         println(gradient(0))
         println(gradient(1))
