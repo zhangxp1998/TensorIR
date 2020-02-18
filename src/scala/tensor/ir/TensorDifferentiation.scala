@@ -1,6 +1,9 @@
 package tensor.ir
 
-import com.sun.xml.internal.xsom.impl.scd.Iterators.Adapter
+import lms.core.Backend._
+import lms.core._
+import lms.core.stub.Adapter.typeMap
+import lms.core.stub._
 
 import scala.language.implicitConversions
 import scala.util.continuations._
@@ -55,6 +58,25 @@ trait TensorDifferentiation extends TensorOps {
       cache
     }
 
+    def matmul(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      val M = cache.dims.head
+      val K = that.cache.dims.head
+      val N = that.cache.dims(1)
+      val y = new TensorR((cache matmul that.cache): Tensor[A], Tensor.zero(Seq(M, N)))
+      k(y)
+      val m1: Tensor[A] = x
+      val m2: Tensor[A] = that.x
+      val output: Tensor[A] = y.x
+
+      Adapter.g.reflectEffect(
+        "matmul-backprop", Unwrap(m1), Unwrap(m2), Unwrap(output), Unwrap(d), Unwrap(that.d), Backend.Const(Seq(M, K, N))
+      )(
+        Unwrap(m1), Unwrap(m2), Unwrap(output)
+      )(
+        Unwrap(d), Unwrap(that.d)
+      )
+    }
+
     def +(that: Rep[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val y = new TensorR((x + that): Tensor[A], Tensor.zero[A](x.dims))
       k(y)
@@ -81,28 +103,28 @@ trait TensorDifferentiation extends TensorOps {
 
     // Tensor-Tensor element wise operations
     def +(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x add that.x, Tensor.zero[A](x.dims))
+      val y = new TensorR(x add that.x, Tensor.zero[A](that.x.dims))
       k(y)
       that.d += y.d
       this.d += y.d
     }
 
     def -(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x sub that.x, Tensor.zero[A](x.dims))
+      val y = new TensorR(x sub that.x, Tensor.zero[A](that.x.dims))
       k(y)
       that.d -= y.d
       this.d += y.d
     }
 
     def *(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x mul that.x, Tensor.zero[A](x.dims))
+      val y = new TensorR(x mul that.x, Tensor.zero[A](that.x.dims))
       k(y)
       that.d += y.d mul this.x
       this.d += y.d mul that.x
     }
 
     def /(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x mul that.x, Tensor.zero[A](x.dims))
+      val y = new TensorR(x mul that.x, Tensor.zero[A](that.x.dims))
       k(y)
       that.d -= y.d mul this.x div (that.x mul that.x)
       this.d += y.d div that.x
@@ -184,7 +206,7 @@ object TensorDifferentiation {
         }
 
         val x = Tensor.fill[Float](Seq(2), 2)
-        val gradient = grad(a => a * a * a)(x)
+        val gradient = grad(a => a * a * a * a)(x)
         println(gradient(0))
         println(gradient(1))
       }
