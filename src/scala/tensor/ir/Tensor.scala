@@ -80,7 +80,13 @@ trait TensorOps extends Base with Equal {
     def mapInplaceWithFlatIdx(f: Rep[Int] => Rep[A]): Unit = {
       val mA = Backend.Const(manifest[A])
       val block = Adapter.g.reify(exp => Unwrap(f(Wrap[Int](exp))))
-      Wrap[Unit](Adapter.g.reflectEffect("tensor-transform-index", mA, Unwrap(data), block, Backend.Const(dims))(Unwrap(data))(Unwrap(data)))
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-transform-index", mA, Unwrap(data), block, Backend.Const(dims)
+      )(
+        (block.eff.rkeys + Unwrap(data)).toSeq: _*
+      )(
+        (block.eff.wkeys + Unwrap(data)).toSeq: _*
+      ))
     }
     def copy(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
