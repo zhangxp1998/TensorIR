@@ -32,7 +32,7 @@ trait TensorOps extends Base with Equal {
       data = {
         val mA = Backend.Const(manifest[A])
         val unwrapped_xs: Seq[Backend.Def] = Seq(mA) ++ dims.map(i => Backend.Const(i))
-        Wrap[Array[A]](Adapter.g.reflectWrite("tensor-new", unwrapped_xs:_*)(STORE))
+        Wrap[Array[A]](Adapter.g.reflectMutable("tensor-new", unwrapped_xs:_*))
       }
     }
     def checkIdx(idx: Seq[Int]): Unit = {
@@ -93,7 +93,7 @@ trait TensorOps extends Base with Equal {
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
       new Tensor(
         dims,
-        Wrap[Array[A]](Adapter.g.reflectEffect("tensor-copy", unwrapped_xs:_*)(Unwrap(data))(STORE))
+        Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE))
       )
     }
 
@@ -432,13 +432,21 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) exten
 
   val symMap: mutable.Map[Exp, Exp] = new mutable.HashMap[Exp, Exp]()
   override def transform(n: Node): Exp = n match {
-    case Node(s, "tensor-new", Const(mA: Manifest[_])::dims, _) =>
-      val exp = g.reflectWrite("heap-offset", Const(mA)::Const(allocationPlan(s.n))::dims:_*)(STORE)
+    case Node(s, "tensor-new", Const(mA: Manifest[_])::dims, eff) =>
+      val exp = g.reflectEffect("heap-offset", Const(mA)::Const(allocationPlan(s.n))::dims:_*)(
+        eff.rkeys.map(transform).toSeq: _*
+      )(
+        eff.wkeys.map(transform).toSeq: _*
+      )
       symMap(s) = exp
       exp
     case Node(s, "tensor-copy", List(mA, tensor, dims), eff) =>
       val src = symMap(tensor.asInstanceOf[Sym])
-      val exp = g.reflectEffect("heap-offset-copy", mA, src, Const(allocationPlan(s.n)), dims)(eff.rkeys.map(transform).toSeq: _*)(eff.wkeys.map(transform).toSeq: _*)
+      val exp = g.reflectEffect("heap-offset-copy", mA, src, Const(allocationPlan(s.n)), dims)(
+        eff.rkeys.map(transform).toSeq: _*
+      )(
+        eff.wkeys.map(transform).toSeq: _*
+      )
       symMap(s) = exp
       exp
     case Node(s, _, _, _) =>
