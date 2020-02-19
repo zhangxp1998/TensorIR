@@ -25,7 +25,7 @@ trait TensorDifferentiation extends TensorOps {
     }
     def apply(dims: Seq[Int], f: Rep[Int] => Float): TensorR[Float] = {
       val tensor = Tensor[Float](dims)
-      tensor.mapInplaceWithFlatIdx((_, idx) => f(idx))
+      tensor.mapInplaceWithFlatIdx(idx => f(idx))
       TensorR(tensor)
     }
     def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {

@@ -9,7 +9,7 @@ class TensorDifferentiationTest extends FunSuite {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length))
-        x.mapInplaceWithFlatIdx((_, idx) => idx)
+        x.mapInplaceWithFlatIdx(idx => idx)
         val gradient = TensorR.grad(a => a+a)(x)
         for (i <- 0 until length : Rep[Range]) {
           println(gradient.data(i))
@@ -26,7 +26,7 @@ class TensorDifferentiationTest extends FunSuite {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length))
-        x.mapInplaceWithFlatIdx((_, idx) => idx)
+        x.mapInplaceWithFlatIdx(idx => idx)
         val gradient = TensorR.grad(a => TensorR(Seq(length), 0)-a)(x)
         for (i <- 0 until length : Rep[Range]) {
           println(gradient.data(i))
@@ -43,9 +43,9 @@ class TensorDifferentiationTest extends FunSuite {
     val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(length))
-        x.mapInplaceWithFlatIdx((_, idx) => idx)
+        x.mapInplaceWithFlatIdx(idx => idx)
         val y = Tensor[Float](Seq(length))
-        y.mapInplaceWithFlatIdx((_, idx) => 20-idx)
+        y.mapInplaceWithFlatIdx(idx => 20-idx)
         val (gradient1, gradient2) = TensorR.grad((a, b) => a*b)(x, y)
         for (i <- 0 until length : Rep[Range]) {
           printf("%f %f\n", gradient1.data(i), gradient2.data(i))
@@ -65,9 +65,9 @@ class TensorDifferentiationTest extends FunSuite {
     val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(length))
-        x.mapInplaceWithFlatIdx((_, idx) => idx)
+        x.mapInplaceWithFlatIdx(idx => idx)
         val y = Tensor[Float](Seq(length))
-        y.mapInplaceWithFlatIdx((_, idx) => 20-idx)
+        y.mapInplaceWithFlatIdx(idx => 20-idx)
         val (gradient1, gradient2) = TensorR.grad((a, b) => a/b)(x, y)
         for (i <- 0 until length : Rep[Range]) {
           printf("%f %f\n", gradient1.data(i), gradient2.data(i))
@@ -91,7 +91,7 @@ class TensorDifferentiationTest extends FunSuite {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length))
-        x.mapInplaceWithFlatIdx((_, idx) => idx)
+        x.mapInplaceWithFlatIdx(idx => idx)
         val gradient = TensorR.grad(a => a*2 + a*a*a)(x)
         for (i <- 0 until length : Rep[Range]) {
           println(gradient.data(i))

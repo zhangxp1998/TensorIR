@@ -1,6 +1,6 @@
 package tensor.ir
 
-import lms.core.Backend._
+import lms.core.Backend.{Const, _}
 import lms.core._
 import lms.core.stub.Adapter.typeMap
 import lms.core.stub._
@@ -67,16 +67,20 @@ trait TensorOps extends Base with Equal {
       Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
     }
     def mapInplace(f: Rep[A] => Rep[A]): Unit = {
-      val totalSize = dims.product
-      for(i <- 0 until totalSize: Rep[Range]) {
-        unsafe_update(i, f(unsafe_apply(i)))
-      }
+      val mA = Backend.Const(manifest[A])
+      val block = Adapter.g.reify(exp => Unwrap(f(Wrap[A](exp))))
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-transform", mA, Unwrap(data), block, Backend.Const(dims)
+      )(
+        (block.eff.rkeys + Unwrap(data)).toSeq: _*
+      )(
+        (block.eff.wkeys + Unwrap(data)).toSeq: _*
+      ))
     }
-    def mapInplaceWithFlatIdx(f: (Rep[A], Rep[Int]) => Rep[A]): Unit = {
-      val totalSize = dims.product
-      for(i <- 0 until totalSize: Rep[Range]) {
-        unsafe_update(i, f(unsafe_apply(i), i))
-      }
+    def mapInplaceWithFlatIdx(f: Rep[Int] => Rep[A]): Unit = {
+      val mA = Backend.Const(manifest[A])
+      val block = Adapter.g.reify(exp => Unwrap(f(Wrap[Int](exp))))
+      Wrap[Unit](Adapter.g.reflectEffect("tensor-transform-index", mA, Unwrap(data), block, Backend.Const(dims))(Unwrap(data))(Unwrap(data)))
     }
     def copy(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
@@ -87,11 +91,9 @@ trait TensorOps extends Base with Equal {
       )
     }
 
-    private def binary_broadcast(op: String, rhs: Rep[A]): Tensor[A] = {
-      val mA = Backend.Const(manifest[A])
+    private def binary_broadcast(op: (Rep[A], Rep[A]) => Rep[A], rhs: Rep[A]): Tensor[A] = {
       val result: Tensor[A] = copy()
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(result.data), Backend.Const(op), Unwrap(rhs), Backend.Const(dims))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-binary-broadcast", unwrapped_xs:_*)(Unwrap(result.data)))
+      result.mapInplace(op(_, rhs))
       result
     }
 
@@ -107,7 +109,7 @@ trait TensorOps extends Base with Equal {
       res
     }
     private def tensor_binary_inplace(rhs: Tensor[A], op: String): Unit = {
-      mapInplaceWithFlatIdx((_, idx) => {
+      mapInplaceWithFlatIdx(idx => {
         val a: Rep[A] = unsafe_apply(idx)
         val b: Rep[A] = rhs.unsafe_apply(idx)
         val c: Rep[A] = Wrap[A](Adapter.g.reflect(op, Unwrap(a), Unwrap(b)))
@@ -143,16 +145,16 @@ trait TensorOps extends Base with Equal {
     }
 
     def +(rhs: Rep[A]): Tensor[A] = {
-      binary_broadcast("+=", rhs)
+      binary_broadcast((a, b) => Wrap[A](Adapter.INT(Unwrap(a)).+(Adapter.INT(Unwrap(b))).x): Rep[A], rhs)
     }
     def -(rhs: Rep[A]): Tensor[A] = {
-      binary_broadcast("-=", rhs)
+      binary_broadcast((a, b) => Wrap[A](Adapter.INT(Unwrap(a)).-(Adapter.INT(Unwrap(b))).x): Rep[A], rhs)
     }
     def *(rhs: Rep[A]): Tensor[A] = {
-      binary_broadcast("*=", rhs)
+      binary_broadcast((a, b) => Wrap[A](Adapter.INT(Unwrap(a)).*(Adapter.INT(Unwrap(b))).x): Rep[A], rhs)
     }
     def /(rhs: Rep[A]): Tensor[A] = {
-      binary_broadcast("/=", rhs)
+      binary_broadcast((a, b) => Wrap[A](Adapter.INT(Unwrap(a))./(Adapter.INT(Unwrap(b))).x): Rep[A], rhs)
     }
 
     def matmul(rhs: Tensor[A]): Tensor[A] = {
@@ -301,23 +303,6 @@ trait BaseGenTensorOps extends DslGenC {
       val byteSize = s"${dims.product} * sizeof(${remap(manifest)})"
       emit(s", $byteSize))")
 
-    case Node(s, "tensor-binary-broadcast", List(mA, tensor, Backend.Const(op: String), rhs, Backend.Const(dims: Seq[Int])), _) =>
-      val totalSize = dims.product
-      val loopCounter = "i" + s.n
-      emit(
-        s"""
-          |for (int $loopCounter = 0; $loopCounter < $totalSize; $loopCounter ++) {
-          |
-          |""".stripMargin)
-      shallow(tensor)
-      emit(s"[$loopCounter] $op ")
-      shallow(rhs)
-      emit(
-        """
-          |;
-          |}
-          |""".stripMargin)
-
     case Node(s, "matrix-multiply", List(mA, lhs, rhs, result, Const(Seq(m: Int, k: Int, n: Int))), _) =>
       if (mA.toString != "Float") {
         throw new RuntimeException(s"Only floating point values are supported: ${mA.toString}")
@@ -328,7 +313,7 @@ trait BaseGenTensorOps extends DslGenC {
       shallow(rhs)
       emit(s", $k, 0, ")
       shallow(result)
-      emit(s", $m);")
+      emit(s", $m)")
     case Node(s, "matmul-backprop", List(m1, m2, y, d1, d2, Backend.Const(Seq(m: Int, k: Int, n: Int))), _) =>
       emit("matmul_backprop(")
       shallow(m1)
@@ -348,6 +333,35 @@ trait BaseGenTensorOps extends DslGenC {
       emit("""\n", """) // Should look like <BEGIN>\n", <END>
       shallow(x)
       emit(")")
+    case Node(s, "tensor-transform", List(Const(mA: Manifest[_]), data, block: Block, Const(dims: Seq[Int])), _) =>
+      assert(block.in.length == 1)
+      val totalSize = dims.product
+      emit("std::transform(")
+      shallow(data)
+      emit(", ")
+      shallow(data)
+      emit(s" + $totalSize, ")
+      shallow(data)
+      emit(s", [&](${remap(mA)} ")
+      shallow(block.in.head)
+      emit(")")
+      quoteBlockPReturn(traverse(block))
+      emit(")")
+
+    case Node(s, "tensor-transform-index", List(Const(mA: Manifest[_]), data, block: Block, Const(dims: Seq[Int])), _) =>
+      assert(block.in.length == 1)
+      val totalSize = dims.product
+      val counter = s"i${s.n}"
+      emit(s"for(size_t $counter = 0; $counter < $totalSize; ++$counter) {")
+      emit(s"const size_t ")
+      shallow(block.in.head)
+      emit(s" = $counter;")
+      shallow(data)
+      emit("[")
+      shallow(block.in.head)
+      emit("] = ")
+      quoteBlockP(traverse(block))
+      emit(";}")
 
     case _ => super.shallow(node)
   }
@@ -484,9 +498,10 @@ object Runer {
   def main(args: Array[String]) {
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0)
+        val tensor = Tensor[Float](Seq(1, 2, 3))
+        tensor.mapInplace(_ => 4.0f)
         val tensor2 = Tensor[Float](Seq(1, 2, 3))
-        tensor2.mapInplaceWithFlatIdx((_, idx) => idx)
+        tensor2.mapInplaceWithFlatIdx(idx => idx)
         println(tensor)
 
         println(tensor(0, 1, 2))
@@ -500,7 +515,7 @@ object Runer {
         mat1(Seq(1, 1)) = 1.0
         mat1(Seq(2, 2)) = 1.0
         val mat2 = Tensor[Float](Seq(3, 3))
-        mat2.mapInplaceWithFlatIdx((_, idx) => idx)
+        mat2.mapInplaceWithFlatIdx(idx => idx)
         val mat3 = mat1.matmul(mat2)
         println(mat3(0, 0))
         println(mat3(0, 1))
@@ -509,7 +524,7 @@ object Runer {
     }
 
 
-    dslDriver.eval("5")
+    dslDriver.eval("5").foreach(println)
   }
 }
 
