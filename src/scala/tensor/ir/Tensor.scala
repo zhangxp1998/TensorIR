@@ -10,7 +10,7 @@ import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, M
 import scala.collection.mutable
 
 
-trait TensorOps extends Base with Equal {
+trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps {
   object Tensor {
     def apply[A: Manifest: Numeric](xs: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
       new Tensor(xs)
@@ -185,6 +185,30 @@ trait TensorOps extends Base with Equal {
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(rhs.data), Unwrap(result.data), Backend.Const(Seq(M, K, N)))
       Wrap[Unit](Adapter.g.reflectEffect("matrix-multiply", unwrapped_xs:_*)(Unwrap(data), Unwrap(rhs.data))(Unwrap(result.data)))
       result
+    }
+    def conv(rhs: Tensor[A], pading: Int, stride: Int): Tensor[A] = {
+      if (dims.length < 2) {
+        throw new IllegalAccessError("Convolution can only be done on 3d or 4d tensors")
+      }
+      if (rhs.dims.length > dims.length) {
+        throw new IllegalArgumentException(s"Kernel cannot be bigger than input, kernel dims: ${rhs.dims} input dims: $dims")
+      }
+      val (left, right) = dims.splitAt(dims.length - rhs.dims.length)
+      val outputRight = right.zip(rhs.dims).map{case (input, kernel) => (input+pading*2 - (kernel- 1))/stride}
+      val outputDims = left ++ outputRight
+      val output = Tensor[A](outputDims)
+      val mA = Backend.Const(manifest[A])
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-convolution",
+        mA, Unwrap(data), Unwrap(rhs.data), Unwrap(output.data), Backend.Const(dims), Backend.Const(rhs.dims)
+      )(Unwrap(data), Unwrap(rhs.data))(Unwrap(output.data)))
+      output
+    }
+
+    def relu(inplace: Boolean = false): Tensor[A] = {
+      val output = if (inplace) this else copy()
+      output.mapInplace(ordering_max(_, 0.asInstanceOf[A]))
+      output
     }
   }
   def println(x: Tensor[_]): Unit = {
@@ -368,7 +392,15 @@ trait BaseGenTensorOps extends DslGenC {
       emit("] = ")
       quoteBlockP(traverse(block))
       emit(";}")
-
+    case Node(s, "tensor-convolution", List(mA, data, kernel, output, Const(dims: Seq[Int]), Const(kernelDims: Seq[Int])), _) =>
+      // TODO implement convolution, this is just a stub
+      emit("/*Stub for tensor convolution TODO implement this*/")
+    case Node(s, "max", List(lhs, rhs), _) =>
+      emit(s"std::max<${remap(typeMap(s))}>(")
+      shallow(lhs)
+      emit(", ")
+      shallow(rhs)
+      emit(")")
     case _ => super.shallow(node)
   }
   def format(x: Def): String = x match {
@@ -512,8 +544,7 @@ object Runer {
   def main(args: Array[String]) {
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val tensor = Tensor[Float](Seq(1, 2, 3))
-        tensor.mapInplace(_ => 4.0f)
+        val tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0)
         val tensor2 = Tensor[Float](Seq(1, 2, 3))
         tensor2.mapInplaceWithFlatIdx(idx => idx)
         println(tensor)
