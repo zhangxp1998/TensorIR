@@ -10,7 +10,7 @@ import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, M
 import scala.collection.mutable
 
 
-trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps {
+trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps {
   object Tensor {
     def apply[A: Manifest: Numeric](xs: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
       new Tensor(xs)
@@ -210,13 +210,18 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps {
       output.mapInplace(ordering_max(_, 0.asInstanceOf[A]))
       output
     }
+    def dropout(p: Float = 0.5, inplace: Boolean = false): Tensor[A] = {
+      val output = if (inplace) this else copy()
+      output.mapInplace(a => __ifThenElse(randFloat() <= p, a,0.asInstanceOf[A]))
+      output
+    }
   }
   def println(x: Tensor[_]): Unit = {
     println(x.data)
   }
 }
 
-trait BaseGenTensorOps extends DslGenC {
+trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   doRename = false
 //  val _shouldInline = shouldInline
   var totalMemory: Int = 0
