@@ -186,6 +186,12 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       Wrap[Unit](Adapter.g.reflectEffect("matrix-multiply", unwrapped_xs:_*)(Unwrap(data), Unwrap(rhs.data))(Unwrap(result.data)))
       result
     }
+    def getConvOutputSize(kernelSize: Seq[Int], pading: Int, stride: Int): Seq[Int] = {
+      val (left, right) = dims.splitAt(dims.length - kernelSize.length)
+      val outputRight = right.zip(kernelSize).map{case (input, kernel) => (input+pading*2 - (kernel- 1))/stride}
+      val outputDims = left ++ outputRight
+      outputDims
+    }
     def conv(rhs: Tensor[A], pading: Int, stride: Int): Tensor[A] = {
       if (dims.length < 2) {
         throw new IllegalAccessError("Convolution can only be done on 3d or 4d tensors")
@@ -193,9 +199,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       if (rhs.dims.length > dims.length) {
         throw new IllegalArgumentException(s"Kernel cannot be bigger than input, kernel dims: ${rhs.dims} input dims: $dims")
       }
-      val (left, right) = dims.splitAt(dims.length - rhs.dims.length)
-      val outputRight = right.zip(rhs.dims).map{case (input, kernel) => (input+pading*2 - (kernel- 1))/stride}
-      val outputDims = left ++ outputRight
+      val outputDims = getConvOutputSize(rhs.dims, pading, stride)
       val output = Tensor[A](outputDims)
       val mA = Backend.Const(manifest[A])
       Wrap[Unit](Adapter.g.reflectEffect(
@@ -211,8 +215,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       output
     }
     def dropout(p: Float = 0.5, inplace: Boolean = false): Tensor[A] = {
+      assert(0.0f <= p && p < 1.0f, s"dropout rate should be [0.0, 1), got $p")
       val output = if (inplace) this else copy()
-      output.mapInplace(a => __ifThenElse(randFloat() <= p, a,0.asInstanceOf[A]))
+      output.mapInplace(a => __ifThenElse(randFloat() < p, a,0.asInstanceOf[A]))
       output
     }
   }

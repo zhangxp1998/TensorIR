@@ -129,8 +129,19 @@ trait TensorDifferentiation extends TensorOps {
       that.d -= y.d mul this.x div (that.x mul that.x)
       this.d += y.d div that.x
     }
+    def conv(that: TensorR[A], padding: Int, stride: Int): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
+      val outputSize = x.getConvOutputSize(that.x.dims, padding, stride)
+      val y = new TensorR(x.conv(that.x, padding, stride), Tensor.zero[A](outputSize))
+      k(y)
+      Adapter.g.reflectEffect(
+        "conv-backprop", Unwrap(x), Unwrap(that.x), Unwrap(y.x), Unwrap(d), Unwrap(that.d), Unwrap(y.d), Backend.Const(Seq(padding, stride))
+      )(
+        Unwrap(x), Unwrap(y.x), Unwrap(that.x)
+      )(
+        Unwrap(d), Unwrap(that.d)
+      )
+    }
   }
-
 }
 
 trait TensorDifferentiationCodegen extends BaseGenTensorOps {
@@ -160,6 +171,8 @@ trait TensorDifferentiationCodegen extends BaseGenTensorOps {
       emit(", ")
       shallow(d2)
       emit(s", $m, $k, $n)")
+    case Node(s, "conv-backprop", List(x, kernel, output, d, kernelD, outputD, Backend.Const(Seq(padding: Int, stride: Int))), _) =>
+      // TODO implement convolution backprop
     case _ => super.shallow(n)
   }
 }
