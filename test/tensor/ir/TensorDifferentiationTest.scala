@@ -5,7 +5,7 @@ import lms.macros.SourceContext
 
 class TensorDifferentiationTest extends FunSuite {
   test("add") {
-    val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
+    val dslDriver = new TensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length))
@@ -22,7 +22,7 @@ class TensorDifferentiationTest extends FunSuite {
   }
 
   test("sub") {
-    val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
+    val dslDriver = new TensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length))
@@ -40,7 +40,7 @@ class TensorDifferentiationTest extends FunSuite {
 
   test("mul") {
     val length = 20
-    val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
+    val dslDriver = new TensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(length))
         x.mapInplaceWithFlatIdx(idx => idx)
@@ -62,7 +62,7 @@ class TensorDifferentiationTest extends FunSuite {
 
   test("div") {
     val length = 20
-    val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
+    val dslDriver = new TensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(length))
         x.mapInplaceWithFlatIdx(idx => idx)
@@ -87,7 +87,7 @@ class TensorDifferentiationTest extends FunSuite {
   }
 
   test("composite") {
-    val dslDriver = new TensorDriverC[String,Unit] with TensorDifferentiation {
+    val dslDriver = new TensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length))
@@ -101,7 +101,7 @@ class TensorDifferentiationTest extends FunSuite {
 
     val res = dslDriver.eval("0")
     res.map(_.toDouble).zipWithIndex.foreach{
-      case (d, i) => d == 2 + 3*i*i
+      case (d, i) => assert(d == 2 + 3*i*i)
     }
   }
 }

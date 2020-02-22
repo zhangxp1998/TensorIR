@@ -133,6 +133,43 @@ trait TensorDifferentiation extends TensorOps {
 
 }
 
+trait TensorDifferentiationCodegen extends BaseGenTensorOps {
+  registerTopLevelFunction("matmul_backprop") {
+    emit(
+      """
+        |void matmul_backprop(const float *m1, const float *m2, const float *y,
+        |     float *d1, float *d2, const size_t M, const size_t K, const size_t N) {
+        |  // m1: M*K, m2: K*N, y: M*N
+        |  // d1 += y * m2.T => M*N x N*K = M*K
+        |  // d2 += m1.T * y => K*M x M*N = K*N
+        |  cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, M, N, K, 1.0f, y, M, m2, K, 1.0f, d1, M);
+        |  cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, K, M, N, 1.0f, m1, M, y, M, 1.0f, d2, M);
+        |}
+        |""".stripMargin)
+  }
+  override def shallow(n: Node): Unit = n match {
+    case Node(s, "matmul-backprop", List(m1, m2, y, d1, d2, Backend.Const(Seq(m: Int, k: Int, n: Int))), _) =>
+      emit("matmul_backprop(")
+      shallow(m1)
+      emit(", ")
+      shallow(m2)
+      emit(", ")
+      shallow(y)
+      emit(", ")
+      shallow(d1)
+      emit(", ")
+      shallow(d2)
+      emit(s", $m, $k, $n)")
+    case _ => super.shallow(n)
+  }
+}
+
+abstract class TensorDiffDriverC[A: Manifest, B: Manifest] extends TensorDriverC[A, B] with TensorDifferentiation { q =>
+  override val codegen = new TensorDifferentiationCodegen {
+    override val IR: q.type = q
+  }
+}
+
 object NumR {
   implicit def toNumR(x: Double): NumR = new NumR(x, 0)
 
@@ -190,7 +227,7 @@ class NumR(val x: Double, var d: Double) extends Diff {
 
 object TensorDifferentiation {
   def main(args: Array[String]): Unit = {
-    val dslDriver = new TensorDriverC[String, Unit] with TensorDifferentiation {
+    val dslDriver = new TensorDiffDriverC[String, Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {

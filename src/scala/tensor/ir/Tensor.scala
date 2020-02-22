@@ -222,6 +222,21 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
 }
 
 trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
+  override def init(g: Graph): Graph = {
+    val graph = memoryPlanning(g)
+    super.init(graph)
+  }
+  def memoryPlanning(g: Graph): Graph = {
+    val traverser = new MemoryPlanningTraverser()
+    traverser(g)
+    val events = traverser.events.values
+    val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
+
+    val transformer = new MemoryPlanningTransformer(allocationPlan)
+    val newGraph = transformer.transform(g)
+    typeMap = transformer.newTypeMap
+    newGraph
+  }
   doRename = false
 //  val _shouldInline = shouldInline
   var totalMemory: Int = 0
@@ -266,19 +281,6 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
         |  void *p = mmap(NULL, size, PROT_READ | PROT_WRITE,
         |                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         |  return p;
-        |}
-        |""".stripMargin)
-  }
-  registerTopLevelFunction("matmul_backprop") {
-    emit(
-      """
-        |void matmul_backprop(const float *m1, const float *m2, const float *y,
-        |     float *d1, float *d2, const size_t M, const size_t K, const size_t N) {
-        |  // m1: M*K, m2: K*N, y: M*N
-        |  // d1 += y * m2.T => M*N x N*K = M*K
-        |  // d2 += m1.T * y => K*M x M*N = K*N
-        |  cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, M, N, K, 1.0f, y, M, m2, K, 1.0f, d1, M);
-        |  cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, K, M, N, 1.0f, m1, M, y, M, 1.0f, d2, M);
         |}
         |""".stripMargin)
   }
@@ -349,18 +351,6 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
       emit(s", $k, 0, ")
       shallow(result)
       emit(s", $m)")
-    case Node(s, "matmul-backprop", List(m1, m2, y, d1, d2, Backend.Const(Seq(m: Int, k: Int, n: Int))), _) =>
-      emit("matmul_backprop(")
-      shallow(m1)
-      emit(", ")
-      shallow(m2)
-      emit(", ")
-      shallow(y)
-      emit(", ")
-      shallow(d1)
-      emit(", ")
-      shallow(d2)
-      emit(s", $m, $k, $n)")
 
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""")
@@ -429,21 +419,6 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
 abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] with TensorOps { q =>
   override val codegen = new BaseGenTensorOps {
     override val IR: q.type = q
-    override def init(g: Graph): Graph = {
-      val graph = memoryPlanning(g)
-      super.init(graph)
-    }
-    def memoryPlanning(g: Graph): Graph = {
-      val traverser = new MemoryPlanningTraverser()
-      traverser(g)
-      val events = traverser.events.values
-      val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
-
-      val transformer = new MemoryPlanningTransformer(allocationPlan)
-      val newGraph = transformer.transform(g)
-      typeMap = transformer.newTypeMap
-      newGraph
-    }
   }
   lazy val g: Graph = Adapter.program(Adapter.g.reify(x => Unwrap(wrapper(Wrap[A](x)))))
 }
