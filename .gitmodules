@@ -1,4 +1,4 @@
 [submodule "lms-clean"]
 	path = lms-clean
-	url = https://github.com/TiarkRompf/lms-clean
+	url = git@github.com:zhangxp1998/lms-clean.git
 	branch = master
