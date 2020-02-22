@@ -294,8 +294,11 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   override def shallow(node: Node): Unit = node match {
     case Node(s, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Nil, eff) =>
       emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
-    case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::_, eff) =>
-      emit(s"((${remap(manifest)}*)(heap+${blk.begin} * sizeof(${remap(manifest)})))")
+    case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::src, eff) =>
+      if (src.isEmpty)
+        emit(s"((${remap(manifest)}*)(heap+${blk.begin} * sizeof(${remap(manifest)})))")
+      else
+        shallow(src.head)
 
     case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
@@ -446,9 +449,14 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
   }
 
   val symMap: mutable.Map[Exp, Exp] = new mutable.HashMap[Exp, Exp]()
+  @scala.annotation.tailrec
+  private final def getSrc(s: Sym): Sym = reusedSyms.get(s) match {
+    case Some(value) => getSrc(value)
+    case None => s
+  }
   override def transform(n: Node): Exp = n match {
     case Node(s, "tensor-new", List(mA, dims), eff) =>
-      val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(s.n)), dims)(
+      val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(s.n)))(
         eff.rkeys.map(transform).toSeq: _*
       )(
         eff.wkeys.map(transform).toSeq: _*
@@ -458,8 +466,8 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
     case Node(s, "tensor-copy", List(mA, tensor, dims), eff) =>
       val exp = if (!allocationPlan.contains(s.n)) {
         assert(reusedSyms.contains(s))
-        val src = reusedSyms(s)
-        val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(src.n)), dims)(
+        val src = getSrc(s)
+        val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(src.n)), tensor)(
           eff.rkeys.map(transform).toSeq: _*
         )(
           eff.wkeys.map(transform).toSeq: _*
@@ -495,13 +503,23 @@ class MemoryPlanningTraverser extends Traverser {
   }
 
   override def apply(g: Graph): Unit = {
+    @scala.annotation.tailrec
+    def getSrc(s: Sym): Sym = reusedSyms.get(s) match {
+      case Some(value) => getSrc(value)
+      case None => s
+    }
     super.apply(g)
     requests.foreach{case (n: Sym, req) =>
-      if (req.isCopy && requests(req.src).lastUseSym == n) {
-        requests(req.src).deallocatedTime = req.deallocatedTime
-        requests.remove(n)
-        reusedSyms(n) = req.src
-        println(s"$n is reusing ${req.src}'s memory")
+      val srcSym = getSrc(req.src)
+      if (srcSym != null){
+        val srcReq = requests(srcSym)
+        if (req.isCopy && srcReq.lastUseSym == n) {
+          srcReq.deallocatedTime = req.deallocatedTime
+          srcReq.lastUseSym = req.lastUseSym
+          requests.remove(n)
+          reusedSyms(n) = srcSym
+          println(s"$n is reusing ${req.src}'s memory")
+        }
       }
     }
   }
@@ -551,7 +569,11 @@ object Runer {
   def main(args: Array[String]) {
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0)
+        var tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0)
+        tensor = tensor + 1
+        tensor = tensor - 1
+        tensor = tensor + 1
+        tensor = tensor - 1
         val tensor2 = Tensor[Float](Seq(1, 2, 3))
         tensor2.mapInplaceWithFlatIdx(idx => idx)
         println(tensor)
