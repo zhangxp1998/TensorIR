@@ -31,8 +31,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       this(dims, null)
       data = {
         val mA = Backend.Const(manifest[A])
-        val unwrapped_xs: Seq[Backend.Def] = Seq(mA) ++ dims.map(i => Backend.Const(i))
-        Wrap[Array[A]](Adapter.g.reflectMutable("tensor-new", unwrapped_xs:_*))
+        Wrap[Array[A]](Adapter.g.reflectMutable("tensor-new", mA, Backend.Const(dims)))
       }
     }
     def checkIdx(idx: Seq[Int]): Unit = {
@@ -237,7 +236,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     val events = traverser.events.values
     val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
 
-    val transformer = new MemoryPlanningTransformer(allocationPlan)
+    val transformer = new MemoryPlanningTransformer(allocationPlan, traverser.reusedSyms.toMap)
     val newGraph = transformer.transform(g)
     typeMap = transformer.newTypeMap
     newGraph
@@ -293,8 +292,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   val is_tensor_new_ops = Set("tensor-new", "heap-offset")
 
   override def shallow(node: Node): Unit = node match {
-    case Node(s, "tensor-new", Const(manifest: Manifest[_])::tail, eff) =>
-      val dims = tail.map{case Const(i: Int) => i}
+    case Node(s, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Nil, eff) =>
       emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
     case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::_, eff) =>
       emit(s"((${remap(manifest)}*)(heap+${blk.begin} * sizeof(${remap(manifest)})))")
@@ -428,7 +426,7 @@ abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] 
   lazy val g: Graph = Adapter.program(Adapter.g.reify(x => Unwrap(wrapper(Wrap[A](x)))))
 }
 
-class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) extends Transformer {
+class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val reusedSyms: Map[Sym, Sym]) extends Transformer {
   g = Adapter.mkGraphBuilder()
   val totalMemory: Int = {
     val maxBlock = allocationPlan.values.maxBy(_.begin)
@@ -449,8 +447,8 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) exten
 
   val symMap: mutable.Map[Exp, Exp] = new mutable.HashMap[Exp, Exp]()
   override def transform(n: Node): Exp = n match {
-    case Node(s, "tensor-new", Const(mA: Manifest[_])::dims, eff) =>
-      val exp = g.reflectEffect("heap-offset", Const(mA)::Const(allocationPlan(s.n))::dims:_*)(
+    case Node(s, "tensor-new", List(mA, dims), eff) =>
+      val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(s.n)), dims)(
         eff.rkeys.map(transform).toSeq: _*
       )(
         eff.wkeys.map(transform).toSeq: _*
@@ -458,12 +456,25 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock]) exten
       symMap(s) = exp
       exp
     case Node(s, "tensor-copy", List(mA, tensor, dims), eff) =>
-      val src = symMap(tensor.asInstanceOf[Sym])
-      val exp = g.reflectEffect("heap-offset-copy", mA, src, Const(allocationPlan(s.n)), dims)(
-        eff.rkeys.map(transform).toSeq: _*
-      )(
-        eff.wkeys.map(transform).toSeq: _*
-      )
+      val exp = if (!allocationPlan.contains(s.n)) {
+        assert(reusedSyms.contains(s))
+        val src = reusedSyms(s)
+        val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(src.n)), dims)(
+          eff.rkeys.map(transform).toSeq: _*
+        )(
+          eff.wkeys.map(transform).toSeq: _*
+        )
+        exp
+      } else {
+        val src = symMap(tensor.asInstanceOf[Sym])
+        val exp = g.reflectEffect("heap-offset-copy", mA, src, Const(allocationPlan(s.n)), dims)(
+          eff.rkeys.map(transform).toSeq: _*
+        )(
+          eff.wkeys.map(transform).toSeq: _*
+        )
+        exp
+      }
+
       symMap(s) = exp
       exp
     case Node(s, _, _, _) =>
@@ -479,40 +490,51 @@ class MemoryPlanningTraverser extends Traverser {
     time+=1
     time
   }
-  class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUseSym: Sym, val size: Int) {
+  class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUseSym: Sym, val size: Int, val src: Sym, val isCopy: Boolean = false) {
     override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
   }
 
-  val requests = scala.collection.mutable.HashMap[Int, MemoryRequest]()
+  override def apply(g: Graph): Unit = {
+    super.apply(g)
+    requests.foreach{case (n: Sym, req) =>
+      if (req.isCopy && requests(req.src).lastUseSym == n) {
+        requests(req.src).deallocatedTime = req.deallocatedTime
+        requests.remove(n)
+        reusedSyms(n) = req.src
+        println(s"$n is reusing ${req.src}'s memory")
+      }
+    }
+  }
+  val reusedSyms = mutable.HashMap[Sym, Sym]()
+  val requests = scala.collection.mutable.HashMap[Sym, MemoryRequest]()
 
   lazy val events = {
     val bst = scala.collection.mutable.TreeMap[Int, MemoryEvent]()
     requests.foreach{
       case (key, req) =>
-        bst(req.allocatedTime) = Allocation(key, req.size)
-        bst(req.deallocatedTime) = Deallocation(key, req.size, req.lastUseSym)
+        bst(req.allocatedTime) = Allocation(key.n, req.size)
+        bst(req.deallocatedTime) = Deallocation(key.n, req.size, req.lastUseSym)
     }
     bst
   }
   override def traverse(n: Node): Unit = {
     n match {
-      case Node(n, "tensor-new", Const(manifest: Manifest[_]):: dims, _) =>
-        val size = dims.map{case Backend.Const(i: Int) => i}.product
-        requests(n.n) = new MemoryRequest(getTime(), getTime(), n, size)
-      case Node(n, "tensor-copy", _:: src :: dims :: Nil, _) =>
+      case Node(n, "tensor-new", List(mA, Backend.Const(dims: Seq[Int])), _) =>
+        requests(n) = new MemoryRequest(getTime(), getTime(), n, dims.product, null)
+      case Node(n, "tensor-copy", _:: src :: dims :: Nil, eff) =>
         val size = (dims match {case Backend.Const(seq: Seq[Int]) => seq}).product
-        requests(n.n) = new MemoryRequest(getTime(), getTime(), n, size)
         src match {
           case exp: Exp => exp match {
-            case Sym(ref) =>
-              requests(ref).deallocatedTime = getTime()
-              requests(ref).lastUseSym = n
+            case s@Sym(_) =>
+              requests(n) = new MemoryRequest(getTime(), getTime(), n, size, s, true)
+              requests(s).deallocatedTime = getTime()
+              requests(s).lastUseSym = n
           }
         }
       case Node(n, _, _, eff) =>
         eff.rkeys.foreach{
-          case Sym(ref) =>
-          requests.get(ref) match {
+          case s@Sym(_) =>
+          requests.get(s) match {
             case Some(request) =>
               request.deallocatedTime = getTime()
               request.lastUseSym = n
