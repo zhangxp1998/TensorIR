@@ -11,6 +11,35 @@ import scala.collection.mutable
 
 
 trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps {
+
+  abstract class DataLoop {
+    def foreach(f: Rep[Int] => Unit): Unit
+  }
+
+  object DataLoop {
+    def apply(size: Int) = if (size <= 3) {
+      new DataLoop {
+        def foreach(f: Rep[Int] => Unit) = {
+          for (i <- 0 until size: Range) f(unit(i))
+        }
+      }
+    } else {
+      new DataLoop {
+        def foreach(f: Rep[Int] => Unit) = {
+          for (i <- 0 until size: Rep[Range]) f(i)
+        }
+      }
+    }
+
+    def apply(size: Rep[Int]) = {
+      new DataLoop {
+        def foreach(f: Rep[Int] => Unit) = {
+          for (i <- 0 until size) f(i)
+        }
+      }
+    }
+  }
+
   object Tensor {
     def apply[A: Manifest: Numeric](xs: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
       new Tensor(xs)
@@ -27,6 +56,12 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     }
   }
   class Tensor[A: Manifest: Numeric] (val dims: Seq[Int], var data: Rep[Array[A]]) {
+    def infix_+(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("+", Unwrap(a), Unwrap(b)))
+    def infix_-(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("-", Unwrap(a), Unwrap(b)))
+    def infix_*(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("*", Unwrap(a), Unwrap(b)))
+    def infix_/(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("/", Unwrap(a), Unwrap(b)))
+
+    lazy val strides = dims.scanRight(1)(_ * _).tail
     def this(dims: Seq[Int]) {
       this(dims, null)
       data = {
@@ -66,15 +101,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
     }
     def mapInplace(f: Rep[A] => Rep[A]): Unit = {
-      val mA = Backend.Const(manifest[A])
-      val block = Adapter.g.reify(exp => Unwrap(f(Wrap[A](exp))))
-      Wrap[Unit](Adapter.g.reflectEffect(
-        "tensor-transform", mA, Unwrap(data), block, Backend.Const(dims)
-      )(
-        (block.eff.rkeys + Unwrap(data)).toSeq: _*
-      )(
-        (block.eff.wkeys + Unwrap(data)).toSeq: _*
-      ))
+      transformRange(0, dims.product, f)
     }
     def mapInplaceWithFlatIdx(f: Rep[Int] => Rep[A]): Unit = {
       val mA = Backend.Const(manifest[A])
@@ -219,6 +246,65 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       output.mapInplace(a => __ifThenElse(randFloat() < p, Wrap[A](Adapter.g.reflect("/", Unwrap(a), Backend.Const(p))), 0.asInstanceOf[A]))
       output
     }
+    def accumulateRange(begin: Rep[Int], end: Rep[Int]): Rep[A] = {
+      val mA = Backend.Const(manifest[A])
+      Wrap[A](Adapter.g.reflectRead("tensor-accumulate-range", mA, Unwrap(data), Unwrap(begin), Unwrap(end))(Unwrap(data)))
+    }
+    def sum(): Rep[A] = accumulateRange(0, dims.product)
+    def square(): Tensor[A] = {
+      val output = copy()
+      output.mapInplace(a => infix_*(a, a))
+      output
+    }
+    def transformRange(begin: Rep[Int], end: Rep[Int], f: Rep[A] => Rep[A]): Unit = {
+      val mA = Backend.Const(manifest[A])
+      val block = Adapter.g.reify(exp => Unwrap(f(Wrap[A](exp))))
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-transform-range", mA, Unwrap(data), block, Unwrap(begin), Unwrap(end)
+      )(
+        (block.eff.rkeys + Unwrap(data)).toSeq: _*
+      )(
+        (block.eff.wkeys + Unwrap(data)).toSeq: _*
+      ))
+    }
+    def batchNormAvg(): Tensor[A] = {
+      assert(this.dims.length == 4, "tensor for batch normal averaging should have 4 dimensions")
+      val base = dims.product/dims(1)
+      val res = Tensor.zero[A](Seq(dims(1), 1, 1))
+
+      for (batch <- DataLoop(dims(0))) {
+        val offsetBatch = batch * strides(0)
+        for (channel <- DataLoop(dims(1))) {
+          val offset = offsetBatch + channel * strides(1)
+          res.data(channel) = infix_+(res.data(channel), accumulateRange(offset, offset + strides(1)))
+        }
+      }
+      res.mapInplace(a => infix_/(a, base.asInstanceOf[A]))
+      res
+    }
+    private def subBatchAvg(avg: Tensor[A]) = {
+      val output = copy()
+      val base = dims.product/dims(1)
+
+      for (batch <- DataLoop(dims(0))) {
+        val offsetBatch = batch * strides(0)
+        for (channel <- DataLoop(dims(1))) {
+          val offset = offsetBatch + channel * strides(1)
+
+        }
+      }
+    }
+//    def batchNorm(gamma: Tensor[A], beta: Tensor[A]): Tensor[A] = {
+////      val saveMean = batchNormAvg()
+////      val diff = this sub saveMean
+////      val saveInvVariance = diff.square().batchNormAvg()
+////      val epsilon = 0.00001f
+////      val xhat = diff / (saveInvVariance + epsilon).sqrt()
+////      val outy = xhat * gamma.resize(-1, 1, 1) + beta.resize(-1, 1, 1)
+////      // runningMean and runningVariance should also be updated???
+////      (outy, Some(saveMean), Some(saveInvVariance), 0)
+////      output
+//    }
   }
   def println(x: Tensor[_]): Unit = {
     println(x.data)
@@ -364,14 +450,27 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
       emit("""\n", """) // Should look like <BEGIN>\n", <END>
       shallow(x)
       emit(")")
-    case Node(s, "tensor-transform", List(Const(mA: Manifest[_]), data, block: Block, Const(dims: Seq[Int])), _) =>
-      assert(block.in.length == 1)
-      val totalSize = dims.product
-      emit("std::transform(")
+    case Node(s, "tensor-accumulate-range", List(Const(mA: Manifest[_]), data, begin, end), _) =>
+      emit("std::accumulate(")
       shallow(data)
+      emit("+")
+      shallow(begin)
       emit(", ")
       shallow(data)
-      emit(s" + $totalSize, ")
+      emit("+")
+      shallow(end)
+      emit(s", ${remap(mA)}(0))")
+    case Node(s, "tensor-transform-range", List(Const(mA: Manifest[_]), data, block: Block, begin, end), _) =>
+      assert(block.in.length == 1)
+      emit("std::transform(")
+      shallow(data)
+      emit("+")
+      shallow(begin)
+      emit(", ")
+      shallow(data)
+      emit("+")
+      shallow(end)
+      emit(", ")
       shallow(data)
       emit(s", [&](${remap(mA)} ")
       shallow(block.in.head)

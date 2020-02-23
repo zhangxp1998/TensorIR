@@ -45,4 +45,19 @@ class TensorOpsTest extends FunSuite {
     // With N=400, this will success 99.7% of time
     assert(Math.abs(sum.toFloat/length - p)/p <= 0.075f)
   }
+  test("sum") {
+    val length = 20
+    val dslDriver = new TensorDriverC[String,Unit] {
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val x = Tensor[Float](Seq(length))
+        x.mapInplaceWithFlatIdx(idx => idx + 1)
+        println(x.sum())
+      }
+    }
+
+    val res = dslDriver.eval("0")
+    val nums = res.map(_.toDouble)
+    assert(nums.length == 1)
+    assert(nums.head == (1+length)*length/2)
+  }
 }
