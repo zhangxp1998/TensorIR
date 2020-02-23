@@ -216,7 +216,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def dropout(p: Float = 0.5, inplace: Boolean = false): Tensor[A] = {
       assert(0.0f <= p && p < 1.0f, s"dropout rate should be [0.0, 1), got $p")
       val output = if (inplace) this else copy()
-      output.mapInplace(a => __ifThenElse(randFloat() < p, a,0.asInstanceOf[A]))
+      output.mapInplace(a => __ifThenElse(randFloat() < p, Wrap[A](Adapter.g.reflect("/", Unwrap(a), Backend.Const(p))), 0.asInstanceOf[A]))
       output
     }
   }

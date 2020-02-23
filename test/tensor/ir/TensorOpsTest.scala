@@ -39,7 +39,7 @@ class TensorOpsTest extends FunSuite {
     val res = dslDriver.eval("0")
     var sum = 0
     res.map(_.toFloat).zipWithIndex foreach { case (value, idx) =>
-      assert(value == 0 || value == idx)
+      assert(value == 0 || value == idx/p)
       if (value == 0) sum += 1
     }
     // With N=400, this will success 99.7% of time
