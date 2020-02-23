@@ -305,7 +305,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     private def subBatchAvg(avg: Tensor[A]): Tensor[A] = {
       channelBroadcast(avg, infix_-)
     }
-    def batchNorm(gamma: Tensor[A], beta: Tensor[A]): (Tensor[A], Some[Tensor[A]], Some[Tensor[A]], Int) = {
+    def batchNorm(gamma: Tensor[A], beta: Tensor[A]): (Tensor[A], Tensor[A], Tensor[A], Tensor[A]) = {
       val saveMean = batchNormAvg()
       val diff = subBatchAvg(saveMean)
       val saveInvVariance = diff.square().batchNormAvg()
@@ -313,7 +313,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val xhat = diff.channelBroadcast((saveInvVariance + epsilon.asInstanceOf[A]).sqrt(), infix_/)
       val outy = xhat.channelBroadcast(gamma, infix_*).channelBroadcast(beta, infix_+)
       // runningMean and runningVariance should also be updated???
-      (outy, Some(saveMean), Some(saveInvVariance), 0)
+      (outy, xhat, saveMean, saveInvVariance)
     }
   }
   def println(x: Tensor[_]): Unit = {

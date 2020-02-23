@@ -141,6 +141,20 @@ trait TensorDifferentiation extends TensorOps {
         Unwrap(d), Unwrap(that.d)
       )
     }
+
+    def batchNorm(gamma: TensorR[A], beta: TensorR[A], recomp: Boolean = false): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
+      val cache = x.batchNorm(gamma.x, beta.x)
+      val y = new TensorR(cache._1, Tensor.zero[A](cache._1.dims))
+      k(y)
+      val (outy, xhat, saveMean, saveInvVariance) = if (recomp) x.batchNorm(gamma.x, beta.x) else cache
+      Adapter.g.reflectEffect(
+        "batchNorm-backprop", Seq(x, xhat, saveMean, saveInvVariance, gamma, beta, d, gamma.d, beta.d).map(Unwrap(_)): _*
+      )(
+        Seq(x, xhat, saveMean, saveInvVariance, gamma, beta).map(Unwrap(_)): _*
+      )(
+        Seq(d, gamma.d, beta.d).map(Unwrap(_)): _*
+      )
+    }
   }
 }
 
@@ -173,6 +187,8 @@ trait TensorDifferentiationCodegen extends BaseGenTensorOps {
       emit(s", $m, $k, $n)")
     case Node(s, "conv-backprop", List(x, kernel, output, d, kernelD, outputD, Backend.Const(Seq(padding: Int, stride: Int))), _) =>
       // TODO implement convolution backprop
+    case Node(s, "batchNorm-backprop", List(x, xhat, saveMean, saveInvVariance, gamma, beta, d, gamma_d, beta_d), _) =>
+    // TODO implement batchnorm backprop
     case _ => super.shallow(n)
   }
 }
