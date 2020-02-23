@@ -60,6 +60,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def infix_-(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("-", Unwrap(a), Unwrap(b)))
     def infix_*(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("*", Unwrap(a), Unwrap(b)))
     def infix_/(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("/", Unwrap(a), Unwrap(b)))
+    def sqrt(a: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("sqrt", Unwrap(a)))
 
     lazy val strides = dims.scanRight(1)(_ * _).tail
     def this(dims: Seq[Int]) {
@@ -256,6 +257,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       output.mapInplace(a => infix_*(a, a))
       output
     }
+    def sqrt(): Tensor[A] = {
+      val output = copy()
+      output.mapInplace(sqrt)
+      output
+    }
     def transformRange(begin: Rep[Int], end: Rep[Int], f: Rep[A] => Rep[A]): Unit = {
       val mA = Backend.Const(manifest[A])
       val block = Adapter.g.reify(exp => Unwrap(f(Wrap[A](exp))))
@@ -282,29 +288,33 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       res.mapInplace(a => infix_/(a, base.asInstanceOf[A]))
       res
     }
-    private def subBatchAvg(avg: Tensor[A]) = {
+    private def channelBroadcast(avg: Tensor[A], f: (Rep[A], Rep[A]) => Rep[A]): Tensor[A] = {
+      assert(avg.dims.size == 1)
+      assert(avg.dims.head == dims(1))
       val output = copy()
-      val base = dims.product/dims(1)
 
       for (batch <- DataLoop(dims(0))) {
         val offsetBatch = batch * strides(0)
         for (channel <- DataLoop(dims(1))) {
           val offset = offsetBatch + channel * strides(1)
-
+          transformRange(offset, offset + strides(1), a => f/(a, avg.unsafe_apply(channel)))
         }
       }
+      output
     }
-//    def batchNorm(gamma: Tensor[A], beta: Tensor[A]): Tensor[A] = {
-////      val saveMean = batchNormAvg()
-////      val diff = this sub saveMean
-////      val saveInvVariance = diff.square().batchNormAvg()
-////      val epsilon = 0.00001f
-////      val xhat = diff / (saveInvVariance + epsilon).sqrt()
-////      val outy = xhat * gamma.resize(-1, 1, 1) + beta.resize(-1, 1, 1)
-////      // runningMean and runningVariance should also be updated???
-////      (outy, Some(saveMean), Some(saveInvVariance), 0)
-////      output
-//    }
+    private def subBatchAvg(avg: Tensor[A]): Tensor[A] = {
+      channelBroadcast(avg, infix_-)
+    }
+    def batchNorm(gamma: Tensor[A], beta: Tensor[A]): (Tensor[A], Some[Tensor[A]], Some[Tensor[A]], Int) = {
+      val saveMean = batchNormAvg()
+      val diff = subBatchAvg(saveMean)
+      val saveInvVariance = diff.square().batchNormAvg()
+      val epsilon = 0.00001f
+      val xhat = diff.channelBroadcast((saveInvVariance + epsilon.asInstanceOf[A]).sqrt(), infix_/)
+      val outy = xhat.channelBroadcast(gamma, infix_*).channelBroadcast(beta, infix_+)
+      // runningMean and runningVariance should also be updated???
+      (outy, Some(saveMean), Some(saveInvVariance), 0)
+    }
   }
   def println(x: Tensor[_]): Unit = {
     println(x.data)
