@@ -219,6 +219,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val outputDims = left ++ outputRight
       outputDims
     }
+    def getConv2dOutputSize(inChannels: Int, outChannels: Int, kernelSize: Int, padding: Int, stride: Int): Seq[Int] = {
+      Seq[Int](dims.head, outChannels) ++ getConvOutputSize(Seq(kernelSize, kernelSize), padding, stride)
+    }
     def conv(rhs: Tensor[A], pading: Int, stride: Int): Tensor[A] = {
       if (dims.length < 2) {
         throw new IllegalAccessError("Convolution can only be done on 3d or 4d tensors")
@@ -233,6 +236,34 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         "tensor-convolution",
         mA, Unwrap(data), Unwrap(rhs.data), Unwrap(output.data), Backend.Const(dims), Backend.Const(rhs.dims)
       )(Unwrap(data), Unwrap(rhs.data))(Unwrap(output.data)))
+      output
+    }
+    def padd(padding: Int, paddingDims: Seq[Int]): Tensor[A] = {
+      val newDims = new mutable.ArrayBuffer[Int](dims.length)
+      dims.foreach(newDims += _)
+      paddingDims.foreach(newDims(_) += 2*padding)
+      val res = Tensor[A](newDims)
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-padd", Unwrap(data), Unwrap(res.data), Backend.Const(dims), Backend.Const(padding), Backend.Const(paddingDims)
+      )(
+        Unwrap(data))(
+        Unwrap(res.data)
+      ))
+      res
+    }
+    def conv2d(rhs: Seq[Tensor[A]], padding: Int, stride: Int): Tensor[A] = {
+      assert(dims.length == 4, s"Convolution can only be done on 4d tensors $dims")
+      assert(rhs.forall(_.dims.length == 4), s"Kernels must have dimmension of 3 ${rhs.map(_.dims)}")
+      assert(rhs.tail.forall(_.dims == rhs.head.dims), s"All kernels must have the same size ${rhs.map(_.dims)}")
+
+      val mA = Backend.Const(manifest[A])
+      val data = padd(padding, Seq(2, 3)).data
+      val outputSize = getConv2dOutputSize(dims(1), rhs.head.dims.head, rhs.head.dims(1), padding, stride)
+      val output = Tensor[A](outputSize)
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-convolution2d",
+        Seq(mA, Unwrap(data), Unwrap(output.data), Backend.Const(dims), Backend.Const(outputSize), Backend.Const(rhs.head.dims)) ++ rhs.map(Unwrap(_)):_*
+      )(Seq(Unwrap(data)) ++ rhs.map(Unwrap(_)):_*)(Unwrap(output.data)))
       output
     }
 
@@ -297,7 +328,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         val offsetBatch = batch * strides(0)
         for (channel <- DataLoop(dims(1))) {
           val offset = offsetBatch + channel * strides(1)
-          transformRange(offset, offset + strides(1), a => f/(a, avg.unsafe_apply(channel)))
+          transformRange(offset, offset + strides(1), a => f(a, avg.unsafe_apply(channel)))
         }
       }
       output
@@ -306,6 +337,8 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       channelBroadcast(avg, infix_-)
     }
     def batchNorm(gamma: Tensor[A], beta: Tensor[A]): (Tensor[A], Tensor[A], Tensor[A], Tensor[A]) = {
+      assert(gamma.dims == Seq(dims(1)), s"Gamma should be same size as channels $dims")
+      assert(beta.dims == gamma.dims, s"Beta and Gamma should have same dims ${beta.dims} ${gamma.dims}")
       val saveMean = batchNormAvg()
       val diff = subBatchAvg(saveMean)
       val saveInvVariance = diff.square().batchNormAvg()

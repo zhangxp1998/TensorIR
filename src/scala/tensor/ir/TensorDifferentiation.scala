@@ -16,16 +16,21 @@ trait Diff {
 trait TensorDifferentiation extends TensorOps {
 
   object TensorR {
-    def apply(dims: Seq[Int], fillVal: Float): TensorR[Float] = {
-      val tensor = Tensor.fill[Float](dims, fillVal)
+    def apply[T: Manifest: Numeric](dims: Seq[Int], fillVal: T): TensorR[T] = {
+      val tensor = Tensor.fill[T](dims, fillVal)
       TensorR(tensor)
     }
-    def apply(x: Tensor[Float]): TensorR[Float] = {
-      new TensorR(x, Tensor.zero[Float](x.dims))
+    def apply[T: Manifest: Numeric](x: Tensor[T]): TensorR[T] = {
+      new TensorR(x, Tensor.zero[T](x.dims))
     }
-    def apply(dims: Seq[Int], f: Rep[Int] => Float): TensorR[Float] = {
-      val tensor = Tensor[Float](dims)
+    def apply[T: Manifest: Numeric](dims: Seq[Int], f: Rep[Int] => T): TensorR[T] = {
+      val tensor = Tensor[T](dims)
       tensor.mapInplaceWithFlatIdx(idx => f(idx))
+      TensorR(tensor)
+    }
+    def rand(dims: Seq[Int]): TensorR[Float] = {
+      val tensor = Tensor[Float](dims)
+      tensor.mapInplace(_ => randFloat())
       TensorR(tensor)
     }
     def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
@@ -139,6 +144,24 @@ trait TensorDifferentiation extends TensorOps {
         Unwrap(x), Unwrap(y.x), Unwrap(that.x)
       )(
         Unwrap(d), Unwrap(that.d)
+      )
+    }
+
+    def conv2d(that: Seq[TensorR[A]], padding: Int, stride: Int): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      assert(that.forall(_.d.dims.length == 3))
+      assert(d.dims.length == 4)
+      assert(that.forall(_.d.dims.tail == d.dims.tail.tail))
+      val outputSize = x.getConv2dOutputSize(d.dims(1), that.length, that.head.x.dims(1), padding, stride)
+      val y = new TensorR(x.conv2d(that.map(_.x), padding, stride), Tensor.zero[A](outputSize))
+      k(y)
+      val gradients = that.map(a => Unwrap(a.d))
+      val kernels = that.map(a => Unwrap(a.x))
+      Adapter.g.reflectEffect(
+        "conv2d-backprop", Seq(Unwrap(x), Unwrap(y.x), Unwrap(d), Unwrap(y.d), Backend.Const(Seq(padding, stride))) ++ gradients :_*
+      )(
+        Seq(Unwrap(x), Unwrap(y.x)) ++ kernels: _*
+      )(
+        Unwrap(d) +: gradients: _*
       )
     }
 
