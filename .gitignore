@@ -1,2 +1,6 @@
 project
 target
+.idea
+.vscode
+timing.log
+timingInv.log
