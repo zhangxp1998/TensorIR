@@ -1,4 +1,8 @@
 package tensor.ir
+import lms.macros.SourceContext
+
+import scala.annotation.tailrec
+import scala.util.continuations.{cps, reset}
 
 object ResNet {
 
@@ -32,14 +36,18 @@ object ResNet {
         }
         class FCLayer(val inSize: Int, val outSize: Int) extends Layer {
           val weight = TensorR.rand(Seq(inSize, outSize))
-          override def forward(x: TensorR[Float]): TensorR[Float] = x matmul weight
+          override def forward(x: TensorR[Float]): TensorR[Float]@diff = x matmul weight
 
           override def parameters(): Seq[TensorR[Float]] = Seq(weight)
         }
 
         class Sequential(val layers: Layer*) extends Layer {
-          override def forward(x: TensorR[Float]): TensorR[Float] =
-            layers.reduceLeft[TensorR[Float]]((tensor, layer) => layer.forward(tensor))
+//          @tailrec
+          final def sequential_forward(x: TensorR[Float], remain: List[Layer]): TensorR[Float]@diff = remain match {
+            case head :: tail => sequential_forward(head.forward(x), tail)
+            case Nil => x
+          }
+          override def forward(x: TensorR[Float]): TensorR[Float]@diff = sequential_forward(x, layers.toList)
           lazy val params = layers.map(_.parameters()).reduce((a, b) => a ++ b)
           override def parameters(): Seq[TensorR[Float]] = params
         }
@@ -60,7 +68,7 @@ object ResNet {
                 new Conv2D(inChannels, outChannels, 1, 1, 0),
                 new BatchNorm(outChannels)
               )
-          override def forward(x: TensorR[Float]): TensorR[Float] = {
+          override def forward(x: TensorR[Float]): TensorR[Float]@diff = {
             val out = left.forward(x)
             (out + shortcut.forward(x)).relu()
           }
@@ -68,10 +76,44 @@ object ResNet {
           override def parameters(): Seq[TensorR[Float]] = left.parameters() ++ shortcut.parameters()
         }
         class ResNet extends Layer {
-          override def forward(x: TensorR[Float]): TensorR[Float] = ???
+          val layer = new Sequential(
+            new Conv2D(3, 8, 3, 1, 1),
+            new BatchNorm(8),
+            new ReLU(),
+            new ResidualBlock(8, 16, 2),
+          )
 
-          override def parameters(): Seq[TensorR[Float]] = ???
+          override def forward(x: TensorR[Float]): TensorR[Float]@diff = layer.forward(x)
+
+          override def parameters(): Seq[TensorR[Float]] = layer.parameters()
         }
+        trait Optimizer {
+          def step(): Unit
+        }
+        class GradientDescent(val layer: Layer, val learningRate: Float) extends Optimizer {
+          override def step(): Unit = layer.parameters().foreach { l =>
+            l.x -= l.d * Const(learningRate)
+            print(l.d.unsafe_apply(0))
+          }
+        }
+
+        val batchSize = 10
+        val imgSize = 32
+        val input = Tensor.rand(Seq(batchSize, 3, imgSize, imgSize))
+        val resNet = new ResNet()
+        val optimizer = new GradientDescent(resNet, 0.01)
+
+        def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]) = {
+          val z = new TensorR[Float](x, Tensor.zero[Float](x.dims))
+          reset({
+            val res = f(z)
+            res.d = Tensor.fill[Float](res.x.dims, 1)
+          })
+          z.d
+        }
+        grad(x => resNet.forward(x))(input)
+        optimizer.step()
+        Const(())
       }
     }
 
