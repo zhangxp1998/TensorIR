@@ -65,7 +65,7 @@ object ResNet {
               new Sequential()
             else
               new Sequential(
-                new Conv2D(inChannels, outChannels, 1, 1, 0),
+                new Conv2D(inChannels, outChannels, 1, 2, 0),
                 new BatchNorm(outChannels)
               )
           override def forward(x: TensorR[Float]): TensorR[Float]@diff = {
@@ -93,7 +93,7 @@ object ResNet {
         class GradientDescent(val layer: Layer, val learningRate: Float) extends Optimizer {
           override def step(): Unit = layer.parameters().foreach { l =>
             l.x -= l.d * Const(learningRate)
-            print(l.d.unsafe_apply(0))
+            println(l.d.unsafe_apply(0))
           }
         }
 
