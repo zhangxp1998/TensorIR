@@ -348,6 +348,14 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       // runningMean and runningVariance should also be updated???
       (outy, xhat, saveMean, saveInvVariance)
     }
+    def flatten(): Tensor[A] = {
+      val mA = Backend.Const(manifest[A])
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
+      new Tensor(
+        Seq(dims.product),
+        Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE))
+      )
+    }
   }
   def println(x: Tensor[_]): Unit = {
     println(x.data)

@@ -183,6 +183,11 @@ trait TensorDifferentiation extends TensorOps {
         Seq(d, gamma.d, beta.d).map(Unwrap(_)): _*
       )
     }
+    def flatten(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x.flatten(), Tensor.zero[A](d.dims))
+      k(y)
+      d = y.d
+    }
   }
 }
 
