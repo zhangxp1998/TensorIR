@@ -225,7 +225,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       outputDims
     }
     def getConv2dOutputSize(inChannels: Int, outChannels: Int, kernelSize: Int, padding: Int, stride: Int): Seq[Int] = {
-      Seq[Int](dims.head, outChannels) ++ getConvOutputSize(Seq(kernelSize, kernelSize), padding, stride)
+      Seq[Int](dims.head, outChannels) ++ getConvOutputSize(Seq(kernelSize, kernelSize), padding, stride).tail.tail
     }
     def conv(rhs: Tensor[A], pading: Int, stride: Int): Tensor[A] = {
       if (dims.length < 2) {
@@ -263,7 +263,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
 
       val mA = Backend.Const(manifest[A])
       val data = padd(padding, Seq(2, 3)).data
-      val outputSize = getConv2dOutputSize(dims(1), rhs.head.dims.head, rhs.head.dims(1), padding, stride)
+      val outputSize = getConv2dOutputSize(dims(1), rhs.length, rhs.head.dims(1), padding, stride)
       val output = Tensor[A](outputSize)
       Wrap[Unit](Adapter.g.reflectEffect(
         "tensor-convolution2d",
@@ -312,7 +312,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def batchNormAvg(): Tensor[A] = {
       assert(this.dims.length == 4, "tensor for batch normal averaging should have 4 dimensions")
       val base = dims.product/dims(1)
-      val res = Tensor.zero[A](Seq(dims(1), 1, 1))
+      val res = Tensor.zero[A](Seq(dims(1)))
 
       for (batch <- DataLoop(dims(0))) {
         val offsetBatch = batch * strides(0)
@@ -342,7 +342,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       channelBroadcast(avg, infix_-)
     }
     def batchNorm(gamma: Tensor[A], beta: Tensor[A]): (Tensor[A], Tensor[A], Tensor[A], Tensor[A]) = {
-      assert(gamma.dims == Seq(dims(1)), s"Gamma should be same size as channels $dims")
+      assert(gamma.dims == Seq(dims(1)), s"Gamma should be same size as channels $dims ${gamma.dims}")
       assert(beta.dims == gamma.dims, s"Beta and Gamma should have same dims ${beta.dims} ${gamma.dims}")
       val saveMean = batchNormAvg()
       val diff = subBatchAvg(saveMean)
