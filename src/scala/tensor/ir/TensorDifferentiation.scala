@@ -217,12 +217,16 @@ trait TensorDifferentiationCodegen extends BaseGenTensorOps {
       emit(s", $m, $k, $n)")
     case Node(s, "conv-backprop", List(x, kernel, output, d, kernelD, outputD, Backend.Const(Seq(padding: Int, stride: Int))), _) =>
       // TODO implement convolution backprop
+      emitStubComment(n.op)
     case Node(s, "batchNorm-backprop", List(x, xhat, saveMean, saveInvVariance, gamma, beta, d, gamma_d, beta_d), _) =>
     // TODO implement batchnorm backprop
+      emitStubComment(n.op)
     case Node(s, "conv2d-backprop", x::y_x::d::y_d::Backend.Const(Seq(padding: Int, stride: Int)):: gradients, _)=>
     // TODO implement conv2d backprop
+      emitStubComment(n.op)
     case _ => super.shallow(n)
   }
+  def emitStubComment(op: String): Unit = emit(s"/*${op}*/")
 }
 
 abstract class TensorDiffDriverC[A: Manifest, B: Manifest] extends TensorDriverC[A, B] with TensorDifferentiation { q =>

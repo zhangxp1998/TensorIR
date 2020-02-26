@@ -557,6 +557,12 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
       emit(", ")
       shallow(rhs)
       emit(")")
+    case Node(s, "tensor-padd", List(data, output, Const(dims: Seq[Int]), Const(padding: Int), Const(paddingDims: Seq[Int])), _) =>
+      // TODO implement tensor padd, this is just a stub
+      emit("/*Stub for tensor-padd TODO implement this*/")
+    case Node(s, "tensor-convolution2d", Const(mA: Manifest[_])::data::output::Const(dims: Seq[Int])::Const(outputSize: Seq[Int])::Const(kernelDims: Seq[Int])::kernels, _) =>
+      // TODO implement tensor convolution2d, this is just a stub
+      emit("/*Stub for tensor-convolution2d TODO implement this*/")
     case _ => super.shallow(node)
   }
   def format(x: Def): String = x match {
