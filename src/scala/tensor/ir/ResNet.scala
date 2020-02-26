@@ -30,6 +30,12 @@ object ResNet {
 
           override def parameters(): Seq[TensorR[Float]] = Seq()
         }
+        class FCLayer(val inSize: Int, val outSize: Int) extends Layer {
+          val weight = TensorR.rand(Seq(inSize, outSize))
+          override def forward(x: TensorR[Float]): TensorR[Float] = x matmul weight
+
+          override def parameters(): Seq[TensorR[Float]] = Seq(weight)
+        }
 
         class Sequential(val layers: Layer*) extends Layer {
           override def forward(x: TensorR[Float]): TensorR[Float] =
@@ -60,6 +66,11 @@ object ResNet {
           }
 
           override def parameters(): Seq[TensorR[Float]] = left.parameters() ++ shortcut.parameters()
+        }
+        class ResNet extends Layer {
+          override def forward(x: TensorR[Float]): TensorR[Float] = ???
+
+          override def parameters(): Seq[TensorR[Float]] = ???
         }
       }
     }
