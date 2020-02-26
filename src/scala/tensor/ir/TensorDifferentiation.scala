@@ -29,9 +29,7 @@ trait TensorDifferentiation extends TensorOps {
       TensorR(tensor)
     }
     def rand(dims: Seq[Int]): TensorR[Float] = {
-      val tensor = Tensor[Float](dims)
-      tensor.mapInplace(_ => randFloat())
-      TensorR(tensor)
+      TensorR(Tensor.rand(dims))
     }
     def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
       val z = new TensorR[Float](x, Tensor.zero[Float](x.dims))
@@ -150,7 +148,6 @@ trait TensorDifferentiation extends TensorOps {
     def conv2d(that: Seq[TensorR[A]], padding: Int, stride: Int): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       assert(that.forall(_.d.dims.length == 3))
       assert(d.dims.length == 4)
-      assert(that.forall(_.d.dims.tail == d.dims.tail.tail))
       val outputSize = x.getConv2dOutputSize(d.dims(1), that.length, that.head.x.dims(1), padding, stride)
       val y = new TensorR(x.conv2d(that.map(_.x), padding, stride), Tensor.zero[A](outputSize))
       k(y)
