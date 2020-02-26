@@ -219,6 +219,8 @@ trait TensorDifferentiationCodegen extends BaseGenTensorOps {
       // TODO implement convolution backprop
     case Node(s, "batchNorm-backprop", List(x, xhat, saveMean, saveInvVariance, gamma, beta, d, gamma_d, beta_d), _) =>
     // TODO implement batchnorm backprop
+    case Node(s, "conv2d-backprop", x::y_x::d::y_d::Backend.Const(Seq(padding: Int, stride: Int)):: gradients, _)=>
+    // TODO implement conv2d backprop
     case _ => super.shallow(n)
   }
 }
