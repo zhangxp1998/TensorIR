@@ -609,7 +609,15 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
       val exp = if (!allocationPlan.contains(s.n)) {
         assert(reusedSyms.contains(s))
         val src = getSrc(s)
-        val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(src.n)), tensor)(
+        val arg = tensor match {
+          case b @ Block(_,_,_,_) =>
+            transform(b)
+          case s : Exp =>
+            transform(s)
+          case a =>
+            a
+        }
+        val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(src.n)), arg)(
           eff.rkeys.map(transform).toSeq: _*
         )(
           eff.wkeys.map(transform).toSeq: _*
