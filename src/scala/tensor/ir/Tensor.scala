@@ -54,6 +54,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def zero[A: Manifest: Numeric](dims: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
       Tensor.fill[A](dims, 0.asInstanceOf[A])
     }
+    def rand(dims: Seq[Int])(implicit pos: SourceContext): Tensor[Float] = {
+      val tensor = Tensor[Float](dims)
+      tensor.mapInplace(_ => randFloat())
+      tensor
+    }
   }
   class Tensor[A: Manifest: Numeric] (val dims: Seq[Int], var data: Rep[Array[A]]) {
     def infix_+(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("+", Unwrap(a), Unwrap(b)))
@@ -253,7 +258,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     }
     def conv2d(rhs: Seq[Tensor[A]], padding: Int, stride: Int): Tensor[A] = {
       assert(dims.length == 4, s"Convolution can only be done on 4d tensors $dims")
-      assert(rhs.forall(_.dims.length == 4), s"Kernels must have dimmension of 3 ${rhs.map(_.dims)}")
+      assert(rhs.forall(_.dims.length == 3), s"Kernels must have dimmension of 3 ${rhs.map(_.dims)}")
       assert(rhs.tail.forall(_.dims == rhs.head.dims), s"All kernels must have the same size ${rhs.map(_.dims)}")
 
       val mA = Backend.Const(manifest[A])
