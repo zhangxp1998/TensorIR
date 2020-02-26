@@ -108,6 +108,7 @@ object ResNet {
           reset({
             val res = f(z)
             res.d = Tensor.fill[Float](res.x.dims, 1)
+            println(res.x.unsafe_apply(0))
           })
           z.d
         }
