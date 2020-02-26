@@ -164,6 +164,11 @@ trait TensorDifferentiation extends TensorOps {
         Unwrap(d) +: gradients: _*
       )
     }
+    def relu(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x.relu(), d.copy())
+      k(y)
+      d.mapInplaceWithFlatIdx(i => __ifThenElse(x.unsafe_apply(i) <= 0.asInstanceOf[A], 0.asInstanceOf[A], 1.asInstanceOf[A]))
+    }
 
     def batchNorm(gamma: TensorR[A], beta: TensorR[A], recomp: Boolean = false): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
       val cache = x.batchNorm(gamma.x, beta.x)

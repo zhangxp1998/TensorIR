@@ -27,7 +27,7 @@ class TensorDifferentiationTest extends FunSuite {
         val length = 20
         val x = Tensor[Float](Seq(length))
         x.mapInplaceWithFlatIdx(idx => idx)
-        val gradient = TensorR.grad(a => TensorR(Seq(length), 0)-a)(x)
+        val gradient = TensorR.grad(a => TensorR[Float](Seq(length), 0)-a)(x)
         for (i <- 0 until length : Rep[Range]) {
           println(gradient.data(i))
         }
