@@ -265,10 +265,16 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val data = padd(padding, Seq(2, 3)).data
       val outputSize = getConv2dOutputSize(dims(1), rhs.length, rhs.head.dims(1), padding, stride)
       val output = Tensor[A](outputSize)
+      val kernelsUnwrapped = rhs.map(a => Unwrap(a.data))
       Wrap[Unit](Adapter.g.reflectEffect(
         "tensor-convolution2d",
-        Seq(mA, Unwrap(data), Unwrap(output.data), Backend.Const(dims), Backend.Const(outputSize), Backend.Const(rhs.head.dims)) ++ rhs.map(Unwrap(_)):_*
-      )(Seq(Unwrap(data)) ++ rhs.map(Unwrap(_)):_*)(Unwrap(output.data)))
+        Seq(mA, Unwrap(data), Unwrap(output.data), Backend.Const(dims), Backend.Const(outputSize), Backend.Const(rhs.head.dims)) ++ kernelsUnwrapped:_*
+      )(
+        Seq(Unwrap(data)) ++ kernelsUnwrapped:_*
+      )(
+        Unwrap(output.data)
+      )
+      )
       output
     }
 
@@ -369,8 +375,8 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
 
 trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   override def init(g: Graph): Graph = {
-    val graph = memoryPlanning(g)
-    super.init(graph)
+    val graph = super.init(g)
+    super.init(memoryPlanning(graph))
   }
   def memoryPlanning(g: Graph): Graph = {
     val traverser = new MemoryPlanningTraverser()
@@ -435,7 +441,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
 
   override def shallow(node: Node): Unit = node match {
     case Node(s, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Nil, eff) =>
-      emit(s"malloc(${dims.product} * sizeof(${remap(manifest)}))")
+      emit(s"((${remap(manifest)}*)malloc(${dims.product} * sizeof(${remap(manifest)})))")
     case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::src, eff) =>
       if (src.isEmpty)
         emit(s"((${remap(manifest)}*)(heap+${blk.begin} * sizeof(${remap(manifest)})))")
@@ -593,13 +599,20 @@ abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] 
 class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val reusedSyms: Map[Sym, Sym]) extends Transformer {
   g = Adapter.mkGraphBuilder()
   val totalMemory: Int = {
-    val maxBlock = allocationPlan.values.maxBy(_.begin)
-    maxBlock.begin + maxBlock.size
+    if (allocationPlan.isEmpty) 0 else {
+      val maxBlock = allocationPlan.values.maxBy(_.begin)
+      maxBlock.begin + maxBlock.size
+    }
   }
 
   lazy val newTypeMap: mutable.Map[Exp, Manifest[_]] = {
     val newMap: mutable.Map[Exp, Manifest[_]] = new mutable.HashMap[Exp, Manifest[_]]
-    typeMap.foreach{
+    symMap.foreach{
+      case (before, after) if typeMap.contains(before) =>
+        newMap(after) = typeMap(before)
+      case _ =>
+    }
+    (typeMap -- symMap.values).foreach{
       case (exp, mani) =>
         symMap.get(exp) match {
           case Some(value) => newMap(value) = mani
@@ -625,17 +638,17 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
       symMap(s) = exp
       exp
     case Node(s, "tensor-copy", List(mA, tensor, dims), eff) =>
+      val arg = tensor match {
+        case b @ Block(_,_,_,_) =>
+          transform(b)
+        case s : Exp =>
+          transform(s)
+        case a =>
+          a
+      }
       val exp = if (!allocationPlan.contains(s.n)) {
         assert(reusedSyms.contains(s))
         val src = getSrc(s)
-        val arg = tensor match {
-          case b @ Block(_,_,_,_) =>
-            transform(b)
-          case s : Exp =>
-            transform(s)
-          case a =>
-            a
-        }
         val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(src.n)), arg)(
           eff.rkeys.map(transform).toSeq: _*
         )(
@@ -643,8 +656,7 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
         )
         exp
       } else {
-        val src = symMap(tensor.asInstanceOf[Sym])
-        val exp = g.reflectEffect("heap-offset-copy", mA, src, Const(allocationPlan(s.n)), dims)(
+        val exp = g.reflectEffect("heap-offset-copy", mA, arg, Const(allocationPlan(s.n)), dims)(
           eff.rkeys.map(transform).toSeq: _*
         )(
           eff.wkeys.map(transform).toSeq: _*
