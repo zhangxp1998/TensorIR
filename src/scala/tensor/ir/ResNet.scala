@@ -93,7 +93,7 @@ object ResNet {
         class GradientDescent(val layer: Layer, val learningRate: Float) extends Optimizer {
           override def step(): Unit = layer.parameters().foreach { l =>
             l.x -= l.d * Const(learningRate)
-            println(l.d.unsafe_apply(0))
+            println(l.x.unsafe_apply(0))
           }
         }
 
