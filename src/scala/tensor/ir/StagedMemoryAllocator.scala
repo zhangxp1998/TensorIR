@@ -14,11 +14,13 @@ object StagedMemoryAllocator {
   case class MemoryBlock(begin: Int, size: Int)
 
   def allocate(events: Seq[MemoryEvent]): Map[Int, MemoryBlock] = {
+    if (events.isEmpty) { return Map() }
     // From size to memory block
     val freelist = new mutable.TreeMap[Int, mutable.Set[MemoryBlock]]()
     val maxsize = events.filter(_.isInstanceOf[Allocation]).map{case Allocation(_, size) => size.toLong}.sum
 
     freelist.put(maxsize.toInt, mutable.Set(MemoryBlock(0, maxsize.toInt)))
+    def freeMem = freelist.values.map(blks => blks.toSeq.map(b => b.size).sum).sum
 
     var mem_used = 0;
     var min_mem = 0;
@@ -44,7 +46,9 @@ object StagedMemoryAllocator {
         min_mem = Math.max(mem_used, min_mem)
 
       case Deallocation(id, size, afterSym) =>
+        assert(mem_used + freeMem == maxsize)
         var block = allocationPlan(id)
+        assert(!freelist.get(block.size).exists(_.contains(block)))
         freelist.foreach { case (blockSize, blocks) =>
           blocks.find(_.begin == block.begin + block.size) match {
             case Some(rightNeighbor) =>
@@ -67,7 +71,7 @@ object StagedMemoryAllocator {
         }
         freelist.getOrElseUpdate(block.size, mutable.Set()).add(block)
         mem_used -= size
-        assert(mem_used + freelist.values.flatMap(_.map(_.size)).sum == maxsize)
+        assert(mem_used + freeMem == maxsize)
     }
     val lastBlk = allocationPlan.values.maxBy(b => b.begin + b.size)
     println(s"Optimal: $min_mem Actual: ${lastBlk.begin + lastBlk.size}")
