@@ -72,11 +72,11 @@ trait TensorDifferentiation extends TensorOps {
       val output: Tensor[A] = y.x
 
       Adapter.g.reflectEffect(
-        "matmul-backprop", Unwrap(m1), Unwrap(m2), Unwrap(output), Unwrap(d), Unwrap(that.d), Backend.Const(Seq(M, K, N))
+        "matmul-backprop", Unwrap(m1.data), Unwrap(m2.data), Unwrap(output.data), Unwrap(d.data), Unwrap(that.d.data), Backend.Const(Seq(M, K, N))
       )(
-        Unwrap(m1), Unwrap(m2), Unwrap(output)
+        Unwrap(m1.data), Unwrap(m2.data), Unwrap(output.data)
       )(
-        Unwrap(d), Unwrap(that.d)
+        Unwrap(d.data), Unwrap(that.d.data)
       )
     }
 
@@ -137,11 +137,11 @@ trait TensorDifferentiation extends TensorOps {
       val y = new TensorR(x.conv(that.x, padding, stride), Tensor.zero[A](outputSize))
       k(y)
       Adapter.g.reflectEffect(
-        "conv-backprop", Unwrap(x), Unwrap(that.x), Unwrap(y.x), Unwrap(d), Unwrap(that.d), Unwrap(y.d), Backend.Const(Seq(padding, stride))
+        "conv-backprop", Unwrap(x.data), Unwrap(that.x.data), Unwrap(y.x.data), Unwrap(d.data), Unwrap(that.d.data), Unwrap(y.d.data), Backend.Const(Seq(padding, stride))
       )(
-        Unwrap(x), Unwrap(y.x), Unwrap(that.x)
+        Unwrap(x.data), Unwrap(y.x.data), Unwrap(that.x.data)
       )(
-        Unwrap(d), Unwrap(that.d)
+        Unwrap(d.data), Unwrap(that.d.data)
       )
     }
 
@@ -151,14 +151,14 @@ trait TensorDifferentiation extends TensorOps {
       val outputSize = x.getConv2dOutputSize(d.dims(1), that.length, that.head.x.dims(1), padding, stride)
       val y = new TensorR(x.conv2d(that.map(_.x), padding, stride), Tensor.zero[A](outputSize))
       k(y)
-      val gradients = that.map(a => Unwrap(a.d))
-      val kernels = that.map(a => Unwrap(a.x))
+      val gradients = that.map(a => Unwrap(a.d.data))
+      val kernels = that.map(a => Unwrap(a.x.data))
       Adapter.g.reflectEffect(
-        "conv2d-backprop", Seq(Unwrap(x), Unwrap(y.x), Unwrap(d), Unwrap(y.d), Backend.Const(Seq(padding, stride))) ++ gradients :_*
+        "conv2d-backprop", Seq(Unwrap(x.data), Unwrap(y.x.data), Unwrap(d.data), Unwrap(y.d.data), Backend.Const(Seq(padding, stride))) ++ gradients :_*
       )(
-        Seq(Unwrap(x), Unwrap(y.x)) ++ kernels: _*
+        Seq(Unwrap(x.data), Unwrap(y.x.data)) ++ kernels: _*
       )(
-        Unwrap(d) +: gradients: _*
+        Unwrap(d.data) +: gradients: _*
       )
     }
     def relu(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
@@ -173,11 +173,11 @@ trait TensorDifferentiation extends TensorOps {
       k(y)
       val (outy, xhat, saveMean, saveInvVariance) = if (recomp) x.batchNorm(gamma.x, beta.x) else cache
       Adapter.g.reflectEffect(
-        "batchNorm-backprop", Seq(x, xhat, saveMean, saveInvVariance, gamma, beta, d, gamma.d, beta.d).map(Unwrap(_)): _*
+        "batchNorm-backprop", Seq(x, xhat, saveMean, saveInvVariance, gamma.x, beta.d, d, gamma.d, beta.d).map(a => Unwrap(a.data)): _*
       )(
-        Seq(x, xhat, saveMean, saveInvVariance, gamma, beta).map(Unwrap(_)): _*
+        Seq(x, xhat, saveMean, saveInvVariance, gamma.x, beta.x).map(a => Unwrap(a.data)): _*
       )(
-        Seq(d, gamma.d, beta.d).map(Unwrap(_)): _*
+        Seq(d, gamma.d, beta.d).map(a => Unwrap(a.data)): _*
       )
     }
     def flatten(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
