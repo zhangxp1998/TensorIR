@@ -1,5 +1,7 @@
 package tensor.ir
 
+import java.io.PrintWriter
+
 import lms.core.Backend.{Const, _}
 import lms.core._
 import lms.core.stub.Adapter.typeMap
@@ -378,9 +380,20 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     val graph = super.init(g)
     super.init(memoryPlanning(graph))
   }
+  def saveMemoryRequests(requests: Map[Sym, MemoryRequest]) = {
+    val writer = new PrintWriter("requests.csv")
+    try {
+      requests.values.toList.sortBy(_.allocatedTime).foreach(request => {
+        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size}")
+      })
+    } finally {
+      writer.close()
+    }
+  }
   def memoryPlanning(g: Graph): Graph = {
     val traverser = new MemoryPlanningTraverser()
     traverser(g)
+    saveMemoryRequests(traverser.requests.toMap)
     val events = traverser.events.values
     val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
 
@@ -673,14 +686,15 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
   }
 }
 
+class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUseSym: Sym, val size: Int, val src: Sym, val isCopy: Boolean = false) {
+  override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
+}
+
 class MemoryPlanningTraverser extends Traverser {
   var time: Int = 0
   def getTime(): Int = {
     time+=1
     time
-  }
-  class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUseSym: Sym, val size: Int, val src: Sym, val isCopy: Boolean = false) {
-    override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
   }
 
   override def apply(g: Graph): Unit = {
