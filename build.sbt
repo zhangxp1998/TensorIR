@@ -1,4 +1,4 @@
-name := "lms-tutorials"
+name := "TensorIR"
 
 scalaVersion := "2.12.8"
 
