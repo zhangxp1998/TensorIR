@@ -8,7 +8,7 @@ class TensorOpsTest extends FunSuite {
     val length = 20
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val x = Tensor[Float](Seq(length))
+        val x = Tensor[Float](Seq(length), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx - length/2)
         val output = x.relu()
         for (i <- 0 until length: Rep[Range]) {
@@ -27,7 +27,7 @@ class TensorOpsTest extends FunSuite {
     val p = 0.5f
     val dslDriver: TensorDriverC[String, Unit] = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val x = Tensor[Float](Seq(length))
+        val x = Tensor[Float](Seq(length), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx)
         val output = x.dropout(p)
         for (i <- 0 until length: Rep[Range]) {
@@ -49,7 +49,7 @@ class TensorOpsTest extends FunSuite {
     val length = 20
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        val x = Tensor[Float](Seq(length))
+        val x = Tensor[Float](Seq(length), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx + 1)
         println(x.sum())
       }

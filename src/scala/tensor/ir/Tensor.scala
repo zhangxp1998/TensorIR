@@ -11,9 +11,13 @@ import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, M
 
 import scala.collection.mutable
 
+object AllocationType extends Enumeration {
+  type AllocationType = Value
+  val Data, Gradient, Intermediate, Parameter = Value
+}
 
 trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps {
-
+  type AllocationType = AllocationType.AllocationType
   abstract class DataLoop {
     def foreach(f: Rep[Int] => Unit): Unit
   }
@@ -41,28 +45,27 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       }
     }
   }
-
   object Tensor {
-    def apply[A: Manifest: Numeric](xs: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
-      new Tensor(xs)
+    def apply[A: Manifest: Numeric](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
+      new Tensor(xs, allocType)
     }
-    def fill[A: Manifest: Numeric](dims: Seq[Int], fillVal: A)(implicit pos: SourceContext): Tensor[A] = {
-      val tensor = Tensor[A](dims)
+    def fill[A: Manifest: Numeric](dims: Seq[Int], fillVal: A, allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
+      val tensor = Tensor[A](dims, allocType)
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor.data), Unwrap(fillVal), Backend.Const(dims))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", unwrapped_xs:_*)(Unwrap(tensor.data)))
       tensor
     }
-    def zero[A: Manifest: Numeric](dims: Seq[Int])(implicit pos: SourceContext): Tensor[A] = {
-      Tensor.fill[A](dims, 0.asInstanceOf[A])
+    def zero[A: Manifest: Numeric](dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
+      Tensor.fill[A](dims, 0.asInstanceOf[A], allocType)
     }
-    def rand(dims: Seq[Int])(implicit pos: SourceContext): Tensor[Float] = {
-      val tensor = Tensor[Float](dims)
+    def rand(dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = {
+      val tensor = Tensor[Float](dims, allocType)
       tensor.mapInplace(_ => randFloat())
       tensor
     }
   }
-  class Tensor[A: Manifest: Numeric] (val dims: Seq[Int], var data: Rep[Array[A]]) {
+  class Tensor[A: Manifest: Numeric] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
     def infix_+(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("+", Unwrap(a), Unwrap(b)))
     def infix_-(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("-", Unwrap(a), Unwrap(b)))
     def infix_*(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("*", Unwrap(a), Unwrap(b)))
@@ -70,11 +73,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def sqrt(a: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("sqrt", Unwrap(a)))
 
     lazy val strides = dims.scanRight(1)(_ * _).tail
-    def this(dims: Seq[Int]) {
-      this(dims, null)
+    def this(dims: Seq[Int], allocType: AllocationType) {
+      this(dims, null, allocType)
       data = {
         val mA = Backend.Const(manifest[A])
-        Wrap[Array[A]](Adapter.g.reflectMutable("tensor-new", mA, Backend.Const(dims)))
+        Wrap[Array[A]](Adapter.g.reflectMutable("tensor-new", mA, Backend.Const(dims), Backend.Const(allocType)))
       }
     }
     def checkIdx(idx: Seq[Int]): Unit = {
@@ -122,14 +125,17 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         (block.eff.wkeys + Unwrap(data)).toSeq: _*
       ))
     }
-    def copy(): Tensor[A] = {
+    def copy(newAllocType: AllocationType): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims), Backend.Const(newAllocType))
       new Tensor(
         dims,
-        Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE))
+        Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE)),
+        newAllocType
       )
     }
+
+    def copy(): Tensor[A] = copy(allocType)
 
     private def binary_broadcast(op: (Rep[A], Rep[A]) => Rep[A], rhs: Rep[A]): Tensor[A] = {
       val result: Tensor[A] = copy()
@@ -197,7 +203,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       binary_broadcast((a, b) => Wrap[A](Adapter.INT(Unwrap(a))./(Adapter.INT(Unwrap(b))).x): Rep[A], rhs)
     }
 
-    def matmul(rhs: Tensor[A]): Tensor[A] = {
+    def matmul(rhs: Tensor[A], allocType: AllocationType): Tensor[A] = {
       val rhs_dims: Seq[Int] = rhs.dims
       val lhs_dims: Seq[Int] = dims
       val mA = Backend.Const(manifest[A])
@@ -215,7 +221,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       }
 
       // vector-vector multiplication
-      val result = Tensor[A](Seq(M, N))
+      val result = Tensor[A](Seq(M, N), allocType)
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(rhs.data), Unwrap(result.data), Backend.Const(Seq(M, K, N)))
       Wrap[Unit](Adapter.g.reflectEffect("matrix-multiply", unwrapped_xs:_*)(Unwrap(data), Unwrap(rhs.data))(Unwrap(result.data)))
       result
@@ -237,7 +243,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         throw new IllegalArgumentException(s"Kernel cannot be bigger than input, kernel dims: ${rhs.dims} input dims: $dims")
       }
       val outputDims = getConvOutputSize(rhs.dims, pading, stride)
-      val output = Tensor[A](outputDims)
+      val output = Tensor[A](outputDims, AllocationType.Intermediate)
       val mA = Backend.Const(manifest[A])
       Wrap[Unit](Adapter.g.reflectEffect(
         "tensor-convolution",
@@ -249,7 +255,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val newDims = new mutable.ArrayBuffer[Int](dims.length)
       dims.foreach(newDims += _)
       paddingDims.foreach(newDims(_) += 2*padding)
-      val res = Tensor[A](newDims)
+      val res = Tensor[A](newDims, AllocationType.Intermediate)
       Wrap[Unit](Adapter.g.reflectEffect(
         "tensor-padd", Unwrap(data), Unwrap(res.data), Backend.Const(dims), Backend.Const(padding), Backend.Const(paddingDims)
       )(
@@ -266,7 +272,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val mA = Backend.Const(manifest[A])
       val data = padd(padding, Seq(2, 3)).data
       val outputSize = getConv2dOutputSize(dims(1), rhs.length, rhs.head.dims(1), padding, stride)
-      val output = Tensor[A](outputSize)
+      val output = Tensor[A](outputSize, AllocationType.Intermediate)
       val kernelsUnwrapped = rhs.map(a => Unwrap(a.data))
       Wrap[Unit](Adapter.g.reflectEffect(
         "tensor-convolution2d",
@@ -320,7 +326,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def batchNormAvg(): Tensor[A] = {
       assert(this.dims.length == 4, "tensor for batch normal averaging should have 4 dimensions")
       val base = dims.product/dims(1)
-      val res = Tensor.zero[A](Seq(dims(1)))
+      val res = Tensor.zero[A](Seq(dims(1)), AllocationType.Intermediate)
 
       for (batch <- DataLoop(dims(0))) {
         val offsetBatch = batch * strides(0)
@@ -366,7 +372,8 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
       new Tensor(
         Seq(dims.product),
-        Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE))
+        Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE)),
+        allocType
       )
     }
   }
@@ -384,9 +391,9 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     val writer = new PrintWriter("requests.csv")
     var totalMem = 0
     try {
-      writer.println("begin,end,size,location")
+      writer.println("begin,end,size,location,type")
       requests.sortBy(_.allocatedTime).foreach(request => {
-        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},$totalMem")
+        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},$totalMem,${request.allocType}")
         totalMem += request.size
       })
     } finally {
@@ -396,9 +403,9 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   def saveMemoryPlan(requests: Map[Sym, MemoryRequest], plan: Map[Int, MemoryBlock]): Unit = {
     val writer = new PrintWriter("plan.csv")
     try {
-      writer.println("begin,end,size,location")
+      writer.println("begin,end,size,location,type")
       requests.foreach{case (sym, request) =>
-        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},${plan(sym.n).begin}")
+        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},${plan(sym.n).begin},${request.allocType}")
       }
     } finally {
       writer.close()
@@ -409,7 +416,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     traverser(g)
     val scale: Int => Int = a => Math.log(a).toInt
     val scaleRequest: MemoryRequest => MemoryRequest =
-      req => new MemoryRequest(req.allocatedTime, req.deallocatedTime, req.lastUseSym, scale(req.size), req.src, req.isCopy)
+      req => new MemoryRequest(req.allocatedTime, req.deallocatedTime, req.lastUseSym, scale(req.size), req.src, req.isCopy, req.allocType)
     saveMemoryRequests(traverser.requests.values.map(scaleRequest).toSeq)
     val events = traverser.events.values
 
@@ -480,7 +487,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   val is_tensor_new_ops = Set("tensor-new", "heap-offset")
 
   override def shallow(node: Node): Unit = node match {
-    case Node(s, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Nil, eff) =>
+    case Node(s, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Const(allocType)::Nil, eff) =>
       emit(s"((${remap(manifest)}*)malloc(${dims.product} * sizeof(${remap(manifest)})))")
     case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::src, eff) =>
       if (src.isEmpty)
@@ -518,7 +525,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
       emit(s" + $totalSize, ${quote(fillVal)})")
 
 
-    case Node(s, "tensor-copy", List(mA, tensor, Const(dims: Seq[Int])), _) =>
+    case Node(s, "tensor-copy", List(mA, tensor, Const(dims: Seq[Int]), Const(allocType)), _) =>
       val manifest = mA match {case Const(mani: Manifest[_]) => mani}
       val totalSize = dims.product
       val byteSize = s"$totalSize * sizeof(${remap(manifest)})"
@@ -669,7 +676,7 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
     case None => s
   }
   override def transform(n: Node): Exp = n match {
-    case Node(s, "tensor-new", List(mA, dims), eff) =>
+    case Node(s, "tensor-new", List(mA, dims, allocType), eff) =>
       val exp = g.reflectEffect("heap-offset", mA, Const(allocationPlan(s.n)))(
         eff.rkeys.map(transform).toSeq: _*
       )(
@@ -677,7 +684,7 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
       )
       symMap(s) = exp
       exp
-    case Node(s, "tensor-copy", List(mA, tensor, dims), eff) =>
+    case Node(s, "tensor-copy", List(mA, tensor, dims, allocType), eff) =>
       val arg = tensor match {
         case b @ Block(_,_,_,_) =>
           transform(b)
@@ -713,7 +720,7 @@ class MemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val r
   }
 }
 
-class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUseSym: Sym, val size: Int, val src: Sym, val isCopy: Boolean = false) {
+class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUseSym: Sym, val size: Int, val src: Sym, val isCopy: Boolean, val allocType: AllocationType.AllocationType) {
   override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
 }
 
@@ -759,14 +766,14 @@ class MemoryPlanningTraverser extends Traverser {
   }
   override def traverse(n: Node): Unit = {
     n match {
-      case Node(n, "tensor-new", List(mA, Backend.Const(dims: Seq[Int])), _) =>
-        requests(n) = new MemoryRequest(getTime(), getTime(), n, dims.product, null)
-      case Node(n, "tensor-copy", _:: src :: dims :: Nil, eff) =>
+      case Node(n, "tensor-new", List(mA, Backend.Const(dims: Seq[Int]), Const(allocType: AllocationType.AllocationType)), _) =>
+        requests(n) = new MemoryRequest(getTime(), getTime(), n, dims.product, null, false, allocType)
+      case Node(n, "tensor-copy", _:: src :: dims :: Const(allocType: AllocationType.AllocationType)::Nil, eff) =>
         val size = (dims match {case Backend.Const(seq: Seq[Int]) => seq}).product
         src match {
           case exp: Exp => exp match {
             case s@Sym(_) =>
-              requests(n) = new MemoryRequest(getTime(), getTime(), n, size, s, true)
+              requests(n) = new MemoryRequest(getTime(), getTime(), n, size, s, true, allocType)
               requests(s).deallocatedTime = getTime()
               requests(s).lastUseSym = n
           }
@@ -791,12 +798,12 @@ object Runer {
   def main(args: Array[String]) {
     val dslDriver = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
-        var tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0)
+        var tensor = Tensor.fill[Float](Seq(1, 2, 3), 4.0, AllocationType.Data)
         tensor = tensor + 1
         tensor = tensor - 1
         tensor = tensor + 1
         tensor = tensor - 1
-        val tensor2 = Tensor[Float](Seq(1, 2, 3))
+        val tensor2 = Tensor[Float](Seq(1, 2, 3), AllocationType.Data)
         tensor2.mapInplaceWithFlatIdx(idx => idx)
         println(tensor)
 
@@ -806,13 +813,13 @@ object Runer {
         println((tensor+tensor(0, 0, 0))(0, 1, 2))
         println(tensor2(0, 1, 2))
 
-        val mat1 = Tensor.fill[Float]((Seq(3, 3)), 0)
+        val mat1 = Tensor.fill[Float]((Seq(3, 3)), 0, AllocationType.Data)
         mat1(Seq(0, 0)) = 1.0
         mat1(Seq(1, 1)) = 1.0
         mat1(Seq(2, 2)) = 1.0
-        val mat2 = Tensor[Float](Seq(3, 3))
+        val mat2 = Tensor[Float](Seq(3, 3), AllocationType.Data)
         mat2.mapInplaceWithFlatIdx(idx => idx)
-        val mat3 = mat1.matmul(mat2)
+        val mat3 = mat1.matmul(mat2, AllocationType.Data)
         println(mat3(0, 0))
         println(mat3(0, 1))
         println(mat3(0, 2))

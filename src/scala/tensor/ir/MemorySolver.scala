@@ -1,5 +1,7 @@
 package tensor.ir
 
+import java.io.PrintWriter
+
 import optimus.optimization.enums.SolverLib
 import optimus.optimization.model.{MPBinaryVar, MPIntVar}
 import optimus.optimization._

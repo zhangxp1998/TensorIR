@@ -15,7 +15,7 @@ object ResNet {
         }
         class Conv2D(val inChannels: Int, val outChannels: Int, val kernelSize: Int, val stride: Int, val padding: Int) extends Layer {
           val kernels: Seq[TensorR[Float]] =
-            scala.collection.immutable.Range(0, outChannels).map(_ => TensorR.rand(Seq(inChannels, kernelSize, kernelSize)))
+            scala.collection.immutable.Range(0, outChannels).map(_ => TensorR.rand(Seq(inChannels, kernelSize, kernelSize), AllocationType.Parameter))
           def forward(x: TensorR[Float]): TensorR[Float]@diff = {
             assert(x.x.dims(1) == inChannels)
             x.conv2d(kernels, padding, stride)
@@ -23,8 +23,8 @@ object ResNet {
           def parameters(): Seq[TensorR[Float]] = kernels
         }
         class BatchNorm(val inChannels: Int) extends Layer {
-          val beta = TensorR.rand(Seq(inChannels))
-          val gamma = TensorR.rand(Seq(inChannels))
+          val beta = TensorR.rand(Seq(inChannels), AllocationType.Parameter)
+          val gamma = TensorR.rand(Seq(inChannels), AllocationType.Parameter)
           override def forward(x: TensorR[Float]): TensorR[Float]@diff = x.batchNorm(gamma, beta)
 
           override def parameters(): Seq[TensorR[Float]] = Seq(beta, gamma)
@@ -35,7 +35,7 @@ object ResNet {
           override def parameters(): Seq[TensorR[Float]] = Seq()
         }
         class FCLayer(val inSize: Int, val outSize: Int) extends Layer {
-          val weight = TensorR.rand(Seq(inSize, outSize))
+          val weight = TensorR.rand(Seq(inSize, outSize), AllocationType.Parameter)
           override def forward(x: TensorR[Float]): TensorR[Float]@diff = x matmul weight
 
           override def parameters(): Seq[TensorR[Float]] = Seq(weight)
@@ -99,15 +99,15 @@ object ResNet {
 
         val batchSize = 10
         val imgSize = 32
-        val input = Tensor.rand(Seq(batchSize, 3, imgSize, imgSize))
+        val input = Tensor.rand(Seq(batchSize, 3, imgSize, imgSize), AllocationType.Data)
         val resNet = new ResNet()
         val optimizer = new GradientDescent(resNet, 0.01)
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]) = {
-          val z = new TensorR[Float](x, Tensor.zero[Float](x.dims))
+          val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
           reset({
             val res = f(z)
-            res.d = Tensor.fill[Float](res.x.dims, 1)
+            res.d = Tensor.fill[Float](res.x.dims, 1, AllocationType.Gradient)
             println(res.x.unsafe_apply(0))
           })
           z.d

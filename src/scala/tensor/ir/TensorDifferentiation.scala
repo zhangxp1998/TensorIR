@@ -17,36 +17,36 @@ trait TensorDifferentiation extends TensorOps {
 
   object TensorR {
     def apply[T: Manifest: Numeric](dims: Seq[Int], fillVal: T): TensorR[T] = {
-      val tensor = Tensor.fill[T](dims, fillVal)
+      val tensor = Tensor.fill[T](dims, fillVal, AllocationType.Intermediate)
       TensorR(tensor)
     }
     def apply[T: Manifest: Numeric](x: Tensor[T]): TensorR[T] = {
-      new TensorR(x, Tensor.zero[T](x.dims))
+      new TensorR(x, Tensor.zero[T](x.dims, AllocationType.Gradient))
     }
     def apply[T: Manifest: Numeric](dims: Seq[Int], f: Rep[Int] => T): TensorR[T] = {
-      val tensor = Tensor[T](dims)
+      val tensor = Tensor[T](dims, AllocationType.Intermediate)
       tensor.mapInplaceWithFlatIdx(idx => f(idx))
       TensorR(tensor)
     }
-    def rand(dims: Seq[Int]): TensorR[Float] = {
-      TensorR(Tensor.rand(dims))
+    def rand(dims: Seq[Int], allocType: AllocationType): TensorR[Float] = {
+      TensorR(Tensor.rand(dims, allocType))
     }
     def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
-      val z = new TensorR[Float](x, Tensor.zero[Float](x.dims))
+      val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
       reset({
         val res = f(z)
-        res.d = Tensor.fill[Float](res.x.dims, 1)
+        res.d = Tensor.fill[Float](res.x.dims, 1, AllocationType.Gradient)
       })
       z.d
     }
 
     def grad(f: (TensorR[Float], TensorR[Float]) => TensorR[Float]@cps[Unit])
             (x: Tensor[Float], y: Tensor[Float]): (Tensor[Float], Tensor[Float]) = {
-      val z1 = new TensorR[Float](x, Tensor.zero[Float](x.dims))
-      val z2 = new TensorR[Float](y, Tensor.zero[Float](x.dims))
+      val z1 = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
+      val z2 = new TensorR[Float](y, Tensor.zero[Float](x.dims, AllocationType.Gradient))
       reset({
         val res = f(z1, z2)
-        res.d = Tensor.fill[Float](res.x.dims, 1)
+        res.d = Tensor.fill[Float](res.x.dims, 1, AllocationType.Gradient)
       })
       (z1.d, z2.d)
     }
@@ -65,7 +65,7 @@ trait TensorDifferentiation extends TensorOps {
       val M = cache.dims.head
       val K = that.cache.dims.head
       val N = that.cache.dims(1)
-      val y = new TensorR((cache matmul that.cache): Tensor[A], Tensor.zero(Seq(M, N)))
+      val y = new TensorR((cache.matmul(that.cache, AllocationType.Intermediate)): Tensor[A], Tensor.zero(Seq(M, N), AllocationType.Gradient))
       k(y)
       val m1: Tensor[A] = x
       val m2: Tensor[A] = that.x
@@ -81,60 +81,60 @@ trait TensorDifferentiation extends TensorOps {
     }
 
     def +(that: Rep[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR((x + that): Tensor[A], Tensor.zero[A](x.dims))
+      val y = new TensorR((x + that): Tensor[A], Tensor.zero[A](x.dims, AllocationType.Gradient))
       k(y)
       this.d += y.d
     }
 
     def -(that: Rep[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR((x - that): Tensor[A], Tensor.zero[A](x.dims))
+      val y = new TensorR((x - that): Tensor[A], Tensor.zero[A](x.dims, AllocationType.Gradient))
       k(y)
       this.d += y.d
     }
 
     def *(that: Rep[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x * that, Tensor.zero[A](x.dims))
+      val y = new TensorR(x * that, Tensor.zero[A](x.dims, AllocationType.Gradient))
       k(y)
       this.d += y.d * that
     }
 
     def /(that: Rep[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x / that, Tensor.zero[A](x.dims))
+      val y = new TensorR(x / that, Tensor.zero[A](x.dims, AllocationType.Gradient))
       k(y)
       this.d += y.d / that
     }
 
     // Tensor-Tensor element wise operations
     def +(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x add that.x, Tensor.zero[A](that.x.dims))
+      val y = new TensorR(x add that.x, Tensor.zero[A](that.x.dims, AllocationType.Gradient))
       k(y)
       that.d += y.d
       this.d += y.d
     }
 
     def -(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x sub that.x, Tensor.zero[A](that.x.dims))
+      val y = new TensorR(x sub that.x, Tensor.zero[A](that.x.dims, AllocationType.Gradient))
       k(y)
       that.d -= y.d
       this.d += y.d
     }
 
     def *(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x mul that.x, Tensor.zero[A](that.x.dims))
+      val y = new TensorR(x mul that.x, Tensor.zero[A](that.x.dims, AllocationType.Gradient))
       k(y)
       that.d += y.d mul this.x
       this.d += y.d mul that.x
     }
 
     def /(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x mul that.x, Tensor.zero[A](that.x.dims))
+      val y = new TensorR(x mul that.x, Tensor.zero[A](that.x.dims, AllocationType.Gradient))
       k(y)
       that.d -= y.d mul this.x div (that.x mul that.x)
       this.d += y.d div that.x
     }
     def conv(that: TensorR[A], padding: Int, stride: Int): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
       val outputSize = x.getConvOutputSize(that.x.dims, padding, stride)
-      val y = new TensorR(x.conv(that.x, padding, stride), Tensor.zero[A](outputSize))
+      val y = new TensorR(x.conv(that.x, padding, stride), Tensor.zero[A](outputSize, AllocationType.Gradient))
       k(y)
       Adapter.g.reflectEffect(
         "conv-backprop", Unwrap(x.data), Unwrap(that.x.data), Unwrap(y.x.data), Unwrap(d.data), Unwrap(that.d.data), Unwrap(y.d.data), Backend.Const(Seq(padding, stride))
@@ -149,7 +149,7 @@ trait TensorDifferentiation extends TensorOps {
       assert(that.forall(_.d.dims.length == 3))
       assert(d.dims.length == 4)
       val outputSize = x.getConv2dOutputSize(d.dims(1), that.length, that.head.x.dims(1), padding, stride)
-      val y = new TensorR(x.conv2d(that.map(_.x), padding, stride), Tensor.zero[A](outputSize))
+      val y = new TensorR(x.conv2d(that.map(_.x), padding, stride), Tensor.zero[A](outputSize, AllocationType.Intermediate))
       k(y)
       val gradients = that.map(a => Unwrap(a.d.data))
       val kernels = that.map(a => Unwrap(a.x.data))
@@ -169,7 +169,7 @@ trait TensorDifferentiation extends TensorOps {
 
     def batchNorm(gamma: TensorR[A], beta: TensorR[A], recomp: Boolean = false): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
       val cache = x.batchNorm(gamma.x, beta.x)
-      val y = new TensorR(cache._1, Tensor.zero[A](cache._1.dims))
+      val y = new TensorR(cache._1, Tensor.zero[A](cache._1.dims, AllocationType.Gradient))
       k(y)
       val (outy, xhat, saveMean, saveInvVariance) = if (recomp) x.batchNorm(gamma.x, beta.x) else cache
       Adapter.g.reflectEffect(
@@ -181,7 +181,7 @@ trait TensorDifferentiation extends TensorOps {
       )
     }
     def flatten(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x.flatten(), Tensor.zero[A](d.dims))
+      val y = new TensorR(x.flatten(), Tensor.zero[A](d.dims, AllocationType.Gradient))
       k(y)
       d = y.d
     }
@@ -296,10 +296,10 @@ object TensorDifferentiation {
       override def snippet(x: Rep[String]): Rep[Unit] = {
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
-          val z = new TensorR[Float](x, Tensor.zero[Float](x.dims))
+          val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
           reset({
             val res = f(z)
-            res.d = Tensor.fill[Float](res.x.dims, 1)
+            res.d = Tensor.fill[Float](res.x.dims, 1, AllocationType.Gradient)
             val a: Tensor[Float] = res.x
             println(a(0))
             println(a(1))
@@ -307,7 +307,7 @@ object TensorDifferentiation {
           z.d
         }
 
-        val x = Tensor.fill[Float](Seq(2), 2)
+        val x = Tensor.fill[Float](Seq(2), 2, AllocationType.Data)
         val gradient = grad(a => a * a * a * a)(x)
         println(gradient(0))
         println(gradient(1))
