@@ -380,12 +380,26 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     val graph = super.init(g)
     super.init(memoryPlanning(graph))
   }
-  def saveMemoryRequests(requests: Map[Sym, MemoryRequest]) = {
+  def saveMemoryRequests(requests: Seq[MemoryRequest]): Unit = {
     val writer = new PrintWriter("requests.csv")
+    var totalMem = 0
     try {
-      requests.values.toList.sortBy(_.allocatedTime).foreach(request => {
-        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size}")
+      writer.println("begin,end,size,location")
+      requests.sortBy(_.allocatedTime).foreach(request => {
+        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},$totalMem")
+        totalMem += request.size
       })
+    } finally {
+      writer.close()
+    }
+  }
+  def saveMemoryPlan(requests: Map[Sym, MemoryRequest], plan: Map[Int, MemoryBlock]): Unit = {
+    val writer = new PrintWriter("plan.csv")
+    try {
+      writer.println("begin,end,size,location")
+      requests.foreach{case (sym, request) =>
+        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},${plan(sym.n).begin}")
+      }
     } finally {
       writer.close()
     }
@@ -393,9 +407,22 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   def memoryPlanning(g: Graph): Graph = {
     val traverser = new MemoryPlanningTraverser()
     traverser(g)
-    saveMemoryRequests(traverser.requests.toMap)
+    val scale: Int => Int = a => Math.log(a).toInt
+    val scaleRequest: MemoryRequest => MemoryRequest =
+      req => new MemoryRequest(req.allocatedTime, req.deallocatedTime, req.lastUseSym, scale(req.size), req.src, req.isCopy)
+    saveMemoryRequests(traverser.requests.values.map(scaleRequest).toSeq)
     val events = traverser.events.values
+
+    val scaledEvents = events.map {
+      case Allocation(id, size) => Allocation(id, scale(size))
+      case Deallocation(id, size, sym) => Deallocation(id, scale(size), sym)
+    }
     val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
+//    saveMemoryPlan(traverser.requests.toMap, allocationPlan)
+    saveMemoryPlan(traverser.requests.map{
+      case (sym, req) => sym ->
+        scaleRequest(req)}.toMap,
+      StagedMemoryAllocator.allocate(scaledEvents.toSeq))
 
     val transformer = new MemoryPlanningTransformer(allocationPlan, traverser.reusedSyms.toMap)
     val newGraph = transformer.transform(g)
