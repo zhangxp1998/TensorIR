@@ -13,8 +13,8 @@ object StagedMemoryAllocator {
 
   case class MemoryBlock(begin: Int, size: Int)
 
-  def allocate(events: Seq[MemoryEvent]): Map[Int, MemoryBlock] = {
-    if (events.isEmpty) { return Map() }
+  def allocate(events: Seq[MemoryEvent]): mutable.TreeMap[Int, MemoryBlock] = {
+    if (events.isEmpty) { return mutable.TreeMap() }
     // From size to memory block
     val freelist = new mutable.TreeMap[Int, mutable.Set[MemoryBlock]]()
     val maxsize = events.filter(_.isInstanceOf[Allocation]).map{case Allocation(_, size) => size.toLong}.sum
@@ -75,6 +75,6 @@ object StagedMemoryAllocator {
     }
     val lastBlk = allocationPlan.values.maxBy(b => b.begin + b.size)
     println(s"Optimal: $min_mem Actual: ${lastBlk.begin + lastBlk.size}")
-    allocationPlan.toMap
+    allocationPlan
   }
 }
