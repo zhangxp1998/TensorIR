@@ -468,7 +468,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     emit("dnnl::stream stream(eng);")
   }
   registerInit("heap_init") {
-    emit("heap = (char*)get_mem(1024*1024*1024);")
+    emit("heap = (char*)get_mem(1024*1024*1024*1024);")
   }
   registerTopLevelFunction("tensor_copy"){
     emit(
