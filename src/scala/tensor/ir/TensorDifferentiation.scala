@@ -145,20 +145,20 @@ trait TensorDifferentiation extends TensorOps {
       )
     }
 
-    def conv2d(that: Seq[TensorR[A]], padding: Int, stride: Int): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      assert(that.forall(_.d.dims.length == 3))
+    def conv2d(that: TensorR[A], bias: TensorR[A], padding: Int, stride: Int): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       assert(d.dims.length == 4)
-      val outputSize = x.getConv2dOutputSize(d.dims(1), that.length, that.head.x.dims(1), padding, stride)
-      val y = new TensorR(x.conv2d(that.map(_.x), padding, stride), Tensor.zero[A](outputSize, AllocationType.Intermediate))
+      assert(that.d.dims.length == 4)
+      val outputSize = x.getConv2dOutputSize(d.dims(1), that.x.dims(1), that.x.dims(2), padding, stride)
+      val y = new TensorR(x.conv2d(that.x, bias.x, padding, stride), Tensor.zero[A](outputSize, AllocationType.Intermediate))
       k(y)
-      val gradients = that.map(a => Unwrap(a.d.data))
-      val kernels = that.map(a => Unwrap(a.x.data))
+      val gradients = Unwrap(that.d.data)
+      val kernels = Unwrap(that.x.data)
       Adapter.g.reflectEffect(
-        "conv2d-backprop", Seq(Unwrap(x.data), Unwrap(y.x.data), Unwrap(d.data), Unwrap(y.d.data), Backend.Const(Seq(padding, stride))) ++ gradients :_*
+        "conv2d-backprop", Unwrap(x.data), Unwrap(y.x.data), Unwrap(d.data), Unwrap(y.d.data), Backend.Const(Seq(padding, stride)), gradients
       )(
-        Seq(Unwrap(x.data), Unwrap(y.x.data)) ++ kernels: _*
+        Unwrap(x.data), Unwrap(y.x.data), kernels
       )(
-        Unwrap(d.data) +: gradients: _*
+        Unwrap(d.data), gradients
       )
     }
     def relu(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>

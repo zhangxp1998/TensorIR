@@ -14,13 +14,14 @@ object ResNet {
           def parameters(): Seq[TensorR[Float]]
         }
         class Conv2D(val inChannels: Int, val outChannels: Int, val kernelSize: Int, val stride: Int, val padding: Int) extends Layer {
-          val kernels: Seq[TensorR[Float]] =
-            scala.collection.immutable.Range(0, outChannels).map(_ => TensorR.rand(Seq(inChannels, kernelSize, kernelSize), AllocationType.Parameter))
+          val kernels: TensorR[Float] =
+            TensorR.rand(Seq(inChannels, outChannels, kernelSize, kernelSize), AllocationType.Parameter)
+          val bias: TensorR[Float] = TensorR.rand(Seq(outChannels), AllocationType.Parameter)
           def forward(x: TensorR[Float]): TensorR[Float]@diff = {
             assert(x.x.dims(1) == inChannels)
-            x.conv2d(kernels, padding, stride)
+            x.conv2d(kernels, bias, padding, stride)
           }
-          def parameters(): Seq[TensorR[Float]] = kernels
+          def parameters(): Seq[TensorR[Float]] = Seq(kernels, bias)
         }
         class BatchNorm(val inChannels: Int) extends Layer {
           val beta = TensorR.rand(Seq(inChannels), AllocationType.Parameter)

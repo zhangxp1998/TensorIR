@@ -6,7 +6,7 @@ import lms.core.Backend.{Const, _}
 import lms.core._
 import lms.core.stub.Adapter.typeMap
 import lms.core.stub._
-import lms.macros.SourceContext
+import lms.macros.{RefinedManifest, SourceContext}
 import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock, MemoryEvent}
 
 import scala.collection.mutable
@@ -45,6 +45,12 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       }
     }
   }
+  // A trait that maps to dnnl::memory::dims. It holds the dimension of tensors at runtime
+  trait MemDims {
+  }
+  // A trait that maps to dnnl::memory. It holds the data pointer, format, and memory dims at runtime.
+  trait MemDesc {
+  }
   object Tensor {
     def apply[A: Manifest: Numeric](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       new Tensor(xs, allocType)
@@ -64,8 +70,16 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       tensor.mapInplace(_ => randFloat())
       tensor
     }
+    def createMemDims(dims: Seq[Int]): Rep[MemDims] = {
+      Wrap[MemDims](Adapter.g.reflect("mem-dims", Backend.Const(dims)))
+    }
+    def createMemDesc[A: Manifest: Numeric](memDims: Rep[MemDims], tensor: Tensor[A]): Rep[MemDesc] = {
+      Wrap[MemDesc](Adapter.g.reflect("mem-desc", Unwrap(memDims), Unwrap(tensor.data), Backend.Const(tensor.dims)))
+    }
   }
   class Tensor[A: Manifest: Numeric] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
+    lazy val memDims: Rep[MemDims] = Tensor.createMemDims(dims)
+    lazy val memDesc: Rep[MemDesc] = Tensor.createMemDesc(memDims, this)
     def infix_+(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("+", Unwrap(a), Unwrap(b)))
     def infix_-(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("-", Unwrap(a), Unwrap(b)))
     def infix_*(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("*", Unwrap(a), Unwrap(b)))
@@ -251,34 +265,22 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       )(Unwrap(data), Unwrap(rhs.data))(Unwrap(output.data)))
       output
     }
-    def padd(padding: Int, paddingDims: Seq[Int]): Tensor[A] = {
-      val newDims = new mutable.ArrayBuffer[Int](dims.length)
-      dims.foreach(newDims += _)
-      paddingDims.foreach(newDims(_) += 2*padding)
-      val res = Tensor[A](newDims, AllocationType.Intermediate)
-      Wrap[Unit](Adapter.g.reflectEffect(
-        "tensor-padd", Unwrap(data), Unwrap(res.data), Backend.Const(dims), Backend.Const(padding), Backend.Const(paddingDims)
-      )(
-        Unwrap(data))(
-        Unwrap(res.data)
-      ))
-      res
-    }
-    def conv2d(rhs: Seq[Tensor[A]], padding: Int, stride: Int): Tensor[A] = {
+    def conv2d(rhs: Tensor[A], bias: Tensor[A], padding: Int, stride: Int): Tensor[A] = {
+      val Seq(ic, oc, kh, kw) = rhs.dims
       assert(dims.length == 4, s"Convolution can only be done on 4d tensors $dims")
-      assert(rhs.forall(_.dims.length == 3), s"Kernels must have dimmension of 3 ${rhs.map(_.dims)}")
-      assert(rhs.tail.forall(_.dims == rhs.head.dims), s"All kernels must have the same size ${rhs.map(_.dims)}")
+      assert(rhs.dims.length == 4, s"Kernel must have dimmension of 4 $rhs")
+      assert(ic == dims(1), s"Kernel input channel should match data ${rhs.dims} $dims")
+      assert(kh == kw, s"Kernel should be a square $kh, $kw")
 
       val mA = Backend.Const(manifest[A])
-      val data = padd(padding, Seq(2, 3)).data
-      val outputSize = getConv2dOutputSize(dims(1), rhs.length, rhs.head.dims(1), padding, stride)
+      val outputSize = getConv2dOutputSize(dims(1), oc, kh, padding, stride)
       val output = Tensor[A](outputSize, AllocationType.Intermediate)
-      val kernelsUnwrapped = rhs.map(a => Unwrap(a.data))
+      val kernelsUnwrapped = Unwrap(rhs)
       Wrap[Unit](Adapter.g.reflectEffect(
         "tensor-convolution2d",
-        Seq(mA, Unwrap(data), Unwrap(output.data), Backend.Const(dims), Backend.Const(outputSize), Backend.Const(rhs.head.dims)) ++ kernelsUnwrapped:_*
+        mA, Unwrap(memDesc), Unwrap(output.memDesc), Unwrap(rhs.memDesc), Unwrap(bias.memDesc), Backend.Const(dims), Backend.Const(Seq(oc, kh, padding, stride))
       )(
-        Seq(Unwrap(data)) ++ kernelsUnwrapped:_*
+        Unwrap(data), kernelsUnwrapped
       )(
         Unwrap(output.data)
       )
@@ -393,7 +395,7 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     try {
       writer.println("begin,end,size,location,type")
       requests.sortBy(_.allocatedTime).foreach(request => {
-        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},$totalMem,${request.allocType}")
+        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},$totalMem,${request.allocType.id}")
         totalMem += request.size
       })
     } finally {
@@ -405,11 +407,22 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
     try {
       writer.println("begin,end,size,location,type")
       requests.foreach{case (sym, request) =>
-        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},${plan(sym.n).begin},${request.allocType}")
+        writer.println(s"${request.allocatedTime},${request.deallocatedTime},${request.size},${plan(sym.n).begin},${request.allocType.id}")
       }
     } finally {
       writer.close()
     }
+  }
+  def allocateMemory(requests: mutable.HashMap[Sym, MemoryRequest]) = {
+    val (perm, intermediate) = requests.partition{case (_, r) => r.allocType == AllocationType.Parameter || r.allocType == AllocationType.Gradient}
+    val events = MemoryPlanningTraverser.toEvents(intermediate.toMap).values.toSeq
+    val partialPlan = StagedMemoryAllocator.allocate(events)
+    var memused = partialPlan.values.map(a => a.begin + a.size).max
+    perm.foreach{ case (sym, request) =>
+      partialPlan(sym.n) = MemoryBlock(memused, request.size)
+      memused += request.size
+    }
+    partialPlan
   }
   def memoryPlanning(g: Graph): Graph = {
     val traverser = new MemoryPlanningTraverser()
@@ -424,14 +437,14 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
       case Allocation(id, size) => Allocation(id, scale(size))
       case Deallocation(id, size, sym) => Deallocation(id, scale(size), sym)
     }
-    val allocationPlan = StagedMemoryAllocator.allocate(events.toSeq)
+    val allocationPlan = allocateMemory(traverser.requests)
 //    saveMemoryPlan(traverser.requests.toMap, allocationPlan)
     saveMemoryPlan(traverser.requests.map{
       case (sym, req) => sym ->
         scaleRequest(req)}.toMap,
-      StagedMemoryAllocator.allocate(scaledEvents.toSeq))
+    StagedMemoryAllocator.allocate(scaledEvents.toSeq).toMap)
 
-    val transformer = new MemoryPlanningTransformer(allocationPlan, traverser.reusedSyms.toMap)
+    val transformer = new MemoryPlanningTransformer(allocationPlan.toMap, traverser.reusedSyms.toMap)
     val newGraph = transformer.transform(g)
     typeMap = transformer.newTypeMap
     newGraph
@@ -441,11 +454,18 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   var totalMemory: Int = 0
   var allocationPlan: Map[Int, MemoryBlock] = Map()
   registerHeader("<string.h>", "<algorithm>")
-  registerHeader("<cblas.h>")
+  registerHeader("<cblas.h>", "<dnnl.hpp>")
   registerHeader("<sys/mman.h>", "<unistd.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas", "-g")
+  registerLibrary("-L/usr/local/Cellar/mkl-dnn/1.2/lib", "-lmkldnn")
   registerDatastructures("heap"){
     emit("char *heap = NULL;")
+  }
+  registerDatastructures("eng"){
+    emit("dnnl::engine eng{dnnl::engine::kind::cpu, 0};")
+  }
+  registerDatastructures("stream") {
+    emit("dnnl::stream stream(eng);")
   }
   registerInit("heap_init") {
     emit("heap = (char*)get_mem(1024*1024*1024);")
@@ -457,6 +477,51 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
         |   void *copy = malloc(bytes);
         |   memcpy(copy, source, bytes);
         |   return copy;
+        |}
+        |""".stripMargin)
+  }
+  registerTopLevelFunction("conv2d_forward") {
+    emit(
+      """
+        |template
+        |<size_t N, size_t C, size_t H, size_t W, size_t OutChannels, size_t KernelSize, size_t padding, size_t stride>
+        |static dnnl::convolution_forward::primitive_desc get_conv2d_prim_desc(const dnnl::engine& eng) {
+        |  using namespace dnnl;
+        |  memory::dims conv2_src_tz = {N, C, H, W};
+        |  memory::dims conv2_weights_tz = {OutChannels, C, KernelSize, KernelSize};
+        |  memory::dims conv2_bias_tz = {OutChannels};
+        |  memory::dims conv2_dst_tz = {N, OutChannels, static_cast<long long>((H+2*padding-KernelSize+1)/stride), static_cast<long long>((W+2*padding-KernelSize+1)/stride)};
+        |  // create memory descriptors for convolution data w/ no specified format
+        |  auto conv2_src_md = memory::desc({conv2_src_tz}, memory::data_type::f32, memory::format_tag::any);
+        |  auto conv2_bias_md = memory::desc({conv2_bias_tz}, memory::data_type::f32, memory::format_tag::any);
+        |  auto conv2_weights_md = memory::desc({conv2_weights_tz}, memory::data_type::f32, memory::format_tag::any);
+        |  auto conv2_dst_md = memory::desc({conv2_dst_tz}, memory::data_type::f32, memory::format_tag::any);
+        |  memory::dims conv2_strides = {stride, stride};
+        |  memory::dims conv2_padding = {padding, padding};
+        |
+        |  // create a convolution
+        |//  try {
+        |      auto conv2_desc = convolution_forward::desc(prop_kind::forward_inference,
+        |              algorithm::convolution_auto, conv2_src_md, conv2_weights_md,
+        |              conv2_bias_md, conv2_dst_md, conv2_strides, conv2_padding,
+        |              conv2_padding);
+        |      return convolution_forward::primitive_desc(conv2_desc, eng);
+        |//  } catch (dnnl::error &e) {
+        |//      std::cout << "DNNL error caught: " << std::endl
+        |//                << "\tStatus: " << dnnl_status2str(e.status) << std::endl
+        |//                << "\tMessage: " << e.what() << std::endl;
+        |//  }
+        |}
+        |template
+        |<size_t N, size_t C, size_t H, size_t W, size_t OutChannels, size_t KernelSize, size_t padding, size_t stride>
+        |static void conv2d_forward(const dnnl::engine& eng, dnnl::stream& stream, const dnnl::memory& input, const dnnl::memory& output, const dnnl::memory& weights, const dnnl::memory& bias) {
+        |  using namespace dnnl;
+        |  static convolution_forward::primitive_desc prim_desc = get_conv2d_prim_desc<N, C, H, W, OutChannels, KernelSize, padding, stride>(eng);
+        |  static auto conv2 = convolution_forward(prim_desc);
+        |  conv2.execute(stream, {{DNNL_ARG_SRC, input},
+        |  {DNNL_ARG_WEIGHTS, weights},
+        |  {DNNL_ARG_BIAS, bias},
+        |    {DNNL_ARG_DST, output}});
         |}
         |""".stripMargin)
   }
@@ -485,6 +550,12 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
   }
 
   val is_tensor_new_ops = Set("tensor-new", "heap-offset")
+
+  override def remap(m: Manifest[_]): String = m.toString() match {
+    case s if s.contains("MemDims") => "dnnl::memory::dims"
+    case s if s.contains("MemDesc") => "dnnl::memory"
+    case _ => super.remap(m)
+  }
 
   override def shallow(node: Node): Unit = node match {
     case Node(s, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Const(allocType)::Nil, eff) =>
@@ -610,12 +681,32 @@ trait BaseGenTensorOps extends DslGenC with RandomOpsCodegen {
       emit(", ")
       shallow(rhs)
       emit(")")
-    case Node(s, "tensor-padd", List(data, output, Const(dims: Seq[Int]), Const(padding: Int), Const(paddingDims: Seq[Int])), _) =>
-      // TODO implement tensor padd, this is just a stub
-      emit("/*Stub for tensor-padd TODO implement this*/")
-    case Node(s, "tensor-convolution2d", Const(mA: Manifest[_])::data::output::Const(dims: Seq[Int])::Const(outputSize: Seq[Int])::Const(kernelDims: Seq[Int])::kernels, _) =>
+    case Node(s, "tensor-convolution2d", List(mA, input, output, kernels, bias, Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride))), _) =>
       // TODO implement tensor convolution2d, this is just a stub
-      emit("/*Stub for tensor-convolution2d TODO implement this*/")
+      emit("/*tensor-convolution2d*/")
+      emit(s"conv2d_forward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
+      shallow(input)
+      emit(", ")
+      shallow(output)
+      emit(", ")
+      shallow(kernels)
+      emit(", ")
+      shallow(bias)
+      emit(")")
+    case Node(s, "mem-dims", List(Backend.Const(dims: Seq[Int])), _) =>
+      emit(s"dnnl::memory::dims({${ dims.mkString(", ")} })")
+    case Node(s, "mem-desc", List(memDims, data, Const(dims: Seq[Int])), _) =>
+      emit("dnnl::memory({")
+      shallow(memDims)
+      val format = dims.length match {
+        case 1 => "a"
+        case 2 => "ab"
+        case 3 => "abc"
+        case 4 => "nchw"
+      }
+      emit(s", dnnl::memory::data_type::f32, dnnl::memory::format_tag::$format}, eng, ")
+      shallow(data)
+      emit(")")
     case _ => super.shallow(node)
   }
   def format(x: Def): String = x match {
@@ -724,6 +815,17 @@ class MemoryRequest(val allocatedTime: Int, var deallocatedTime: Int, var lastUs
   override def toString: String = s"[$allocatedTime, $deallocatedTime]: $size"
 }
 
+object MemoryPlanningTraverser {
+  def toEvents(requests: Map[Sym, MemoryRequest]) = {
+    val bst = scala.collection.mutable.TreeMap[Int, MemoryEvent]()
+    requests.foreach{
+      case (key, req) =>
+        bst(req.allocatedTime) = Allocation(key.n, req.size)
+        bst(req.deallocatedTime) = Deallocation(key.n, req.size, req.lastUseSym)
+    }
+    bst
+  }
+}
 class MemoryPlanningTraverser extends Traverser {
   var time: Int = 0
   def getTime(): Int = {
@@ -756,13 +858,7 @@ class MemoryPlanningTraverser extends Traverser {
   val requests = scala.collection.mutable.HashMap[Sym, MemoryRequest]()
 
   lazy val events = {
-    val bst = scala.collection.mutable.TreeMap[Int, MemoryEvent]()
-    requests.foreach{
-      case (key, req) =>
-        bst(req.allocatedTime) = Allocation(key.n, req.size)
-        bst(req.deallocatedTime) = Deallocation(key.n, req.size, req.lastUseSym)
-    }
-    bst
+    MemoryPlanningTraverser.toEvents(requests.toMap)
   }
   override def traverse(n: Node): Unit = {
     n match {
