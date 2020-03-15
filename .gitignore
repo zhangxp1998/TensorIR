@@ -4,3 +4,9 @@ target
 .vscode
 timing.log
 timingInv.log
+plan.csv
+requests.csv
+snippet
+snippet.cpp
+snippet.dSYM
+memory.z3
