@@ -311,8 +311,6 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       shallow(rhs)
       emit(")")
     case Node(s, "tensor-convolution2d", List(mA, input, output, kernels, bias, Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride))), _) =>
-      // TODO implement tensor convolution2d, this is just a stub
-      emit("/*tensor-convolution2d*/")
       emit(s"conv2d_forward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
       shallow(input)
       emit(", ")
