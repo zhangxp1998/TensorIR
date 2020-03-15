@@ -39,8 +39,12 @@ addCompilerPlugin("org.scalamacros" % "paradise" % paradiseVersion cross CrossVe
 // tests are not thread safe
 parallelExecution in Test := false
 
-lazy val tutorials = (project in file(".")).dependsOn(lms % "test->test")
-  // .settings(fork := true)
+
+
+sourceDirectory in Compile := (baseDirectory( _ / "src" )).value
+
+unmanagedSourceDirectories in Compile += (baseDirectory( _ / "test" )).value
+
 
 lazy val lms = ProjectRef(file("./lms-clean"), "lms-clean")
-  // .settings(fork := true)
+lazy val tutorials = (project in file(".")).dependsOn(lms)
