@@ -28,7 +28,7 @@ class TensorOpsTest extends FunSuite {
     val dslDriver: TensorDriverC[String, Unit] = new TensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(length), AllocationType.Data)
-        x.mapInplaceWithFlatIdx(idx => idx)
+        x.mapInplaceWithFlatIdx(idx => idx+1)
         val output = x.dropout(p)
         for (i <- 0 until length: Rep[Range]) {
           println(output.unsafe_apply(i))
@@ -39,7 +39,7 @@ class TensorOpsTest extends FunSuite {
     val res = dslDriver.eval("0")
     var sum = 0
     res.map(_.toFloat).zipWithIndex foreach { case (value, idx) =>
-      assert(value == 0 || value == idx/p)
+      assert(value == 0 || value == (idx+1)/p)
       if (value == 0) sum += 1
     }
     // With N=400, this will success 99.7% of time
