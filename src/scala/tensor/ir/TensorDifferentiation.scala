@@ -9,6 +9,8 @@ import scala.language.implicitConversions
 import scala.util.continuations._
 import lms.macros.SourceContext
 
+import scala.tensor.ir.backend.TensorCPUCodeGen
+
 trait Diff {
   type diff = cps[Unit]
 }
@@ -188,7 +190,7 @@ trait TensorDifferentiation extends TensorOps {
   }
 }
 
-trait TensorDifferentiationCodegen extends BaseGenTensorOps {
+trait TensorDifferentiationCodegen extends TensorCPUCodeGen {
   registerTopLevelFunction("matmul_backprop") {
     emit(
       """
