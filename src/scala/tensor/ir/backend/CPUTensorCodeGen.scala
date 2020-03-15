@@ -11,6 +11,7 @@ import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock}
 import scala.collection.mutable
 
 trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
+  val debug = false
   override def init(g: Graph): Graph = {
     val graph = super.init(g)
     super.init(memoryPlanning(graph))
@@ -56,22 +57,24 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
   def memoryPlanning(g: Graph): Graph = {
     val traverser = new MemoryPlanningTraverser()
     traverser(g)
-    val scale: Int => Int = a => Math.log(a).toInt
-    val scaleRequest: MemoryRequest => MemoryRequest =
-      req => new MemoryRequest(req.allocatedTime, req.deallocatedTime, req.lastUseSym, scale(req.size), req.src, req.isCopy, req.allocType)
-    saveMemoryRequests(traverser.requests.values.map(scaleRequest).toSeq)
-    val events = traverser.events.values
+    if (debug) {
+      val scale: Int => Int = a => Math.log(a).toInt
+      val scaleRequest: MemoryRequest => MemoryRequest =
+        req => new MemoryRequest(req.allocatedTime, req.deallocatedTime, req.lastUseSym, scale(req.size), req.src, req.isCopy, req.allocType)
+      saveMemoryRequests(traverser.requests.values.map(scaleRequest).toSeq)
+      val events = traverser.events.values
 
-    val scaledEvents = events.map {
-      case Allocation(id, size) => Allocation(id, scale(size))
-      case Deallocation(id, size, sym) => Deallocation(id, scale(size), sym)
+      val scaledEvents = events.map {
+        case Allocation(id, size) => Allocation(id, scale(size))
+        case Deallocation(id, size, sym) => Deallocation(id, scale(size), sym)
+      }
+      saveMemoryPlan(traverser.requests.map{
+        case (sym, req) => sym ->
+          scaleRequest(req)}.toMap,
+        StagedMemoryAllocator.allocate(scaledEvents.toSeq).toMap)
     }
+
     val allocationPlan = allocateMemory(traverser.requests)
-    //    saveMemoryPlan(traverser.requests.toMap, allocationPlan)
-    saveMemoryPlan(traverser.requests.map{
-      case (sym, req) => sym ->
-        scaleRequest(req)}.toMap,
-      StagedMemoryAllocator.allocate(scaledEvents.toSeq).toMap)
 
     val transformer = new CPUMemoryPlanningTransformer(allocationPlan.toMap, traverser.reusedSyms.toMap)
     val newGraph = transformer.transform(g)
@@ -86,7 +89,7 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
   registerHeader("<cblas.h>", "<dnnl.hpp>")
   registerHeader("<sys/mman.h>", "<unistd.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas", "-g")
-  registerLibrary("-L/usr/local/Cellar/mkl-dnn/1.2/lib", "-lmkldnn")
+  registerLibrary("-lmkldnn")
   registerDatastructures("heap"){
     emit("char *heap = NULL;")
   }
