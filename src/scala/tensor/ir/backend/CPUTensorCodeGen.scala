@@ -10,7 +10,7 @@ import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock}
 
 import scala.collection.mutable
 
-trait TensorCPUCodeGen extends DslGenC with RandomOpsCodegen {
+trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
   override def init(g: Graph): Graph = {
     val graph = super.init(g)
     super.init(memoryPlanning(graph))

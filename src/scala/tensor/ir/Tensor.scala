@@ -6,7 +6,7 @@ import lms.core.Backend.{Const, _}
 import lms.core._
 import lms.core.stub._
 import lms.macros.SourceContext
-import scala.tensor.ir.backend.TensorCPUCodeGen
+import scala.tensor.ir.backend.CPUTensorCodeGen
 
 object AllocationType extends Enumeration {
   type AllocationType = Value
@@ -382,7 +382,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
 }
 
 abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] with TensorOps { q =>
-  override val codegen = new TensorCPUCodeGen {
+  override val codegen = new CPUTensorCodeGen {
     override val IR: q.type = q
   }
   lazy val g: Graph = Adapter.program(Adapter.g.reify(x => Unwrap(wrapper(Wrap[A](x)))))
