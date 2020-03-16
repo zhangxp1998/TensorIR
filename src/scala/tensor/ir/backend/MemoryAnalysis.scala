@@ -71,7 +71,7 @@ class MemoryPlanningTraverser extends Traverser {
           }
         }
       case Node(n, _, _, eff) =>
-        eff.rkeys.foreach{
+        (eff.rkeys ++ eff.wkeys).foreach{
           case s@Sym(_) =>
             requests.get(s) match {
               case Some(request) =>
