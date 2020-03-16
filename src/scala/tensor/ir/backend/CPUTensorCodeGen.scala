@@ -90,8 +90,11 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
   registerHeader("<sys/mman.h>", "<unistd.h>")
   registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas", "-g")
   registerLibrary("-lmkldnn")
-  registerDatastructures("heap"){
+  registerDatastructures("heap") {
     emit("char *heap = NULL;")
+  }
+  registerDatastructures("epsilon") {
+    emit("constexpr float epsilon = 1e-7f;")
   }
   registerDatastructures("eng"){
     emit("dnnl::engine eng{dnnl::engine::kind::cpu, 0};")
@@ -166,7 +169,6 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
         |  using namespace dnnl;
         |  memory::dims src_dims = {N, C, H, W};
         |  auto src_md = memory::desc(src_dims, memory::data_type::f32, memory::format_tag::nchw);
-        |  constexpr float epsilon = 1e-7f;
         |  // Create operation descriptor.
         |  auto bnorm_d = batch_normalization_forward::desc(
         |          prop_kind::forward_training, src_md, epsilon,

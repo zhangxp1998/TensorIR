@@ -175,11 +175,11 @@ trait TensorDifferentiation extends TensorOps {
       k(y)
       val (_, avg, variance) = if (recomp) x.batchNorm(gamma_beta.x) else cache
       Adapter.g.reflectEffect(
-        "batchNorm-backprop", Backend.Const(d.dims)+:Seq(x, y.d, avg, variance, d).map(a => Unwrap(a.memDesc)): _*
+        "batchNorm-backprop", Backend.Const(d.dims)+:Seq(x, y.d, avg, variance, d, gamma_beta.x, gamma_beta.d).map(a => Unwrap(a.memDesc)): _*
       )(
-        Seq(x, y.d, avg, variance).map(a => Unwrap(a.data)): _*
+        Seq(x, y.d, avg, variance, gamma_beta.x).map(a => Unwrap(a.data)): _*
       )(
-        Unwrap(d.data)
+        Unwrap(d, gamma_beta.d.data)
       )
     }
     def flatten(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
