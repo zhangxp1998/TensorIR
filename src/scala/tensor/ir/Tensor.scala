@@ -263,7 +263,8 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       output
     }
     def conv2d(rhs: Tensor[A], bias: Tensor[A], padding: Int, stride: Int): Tensor[A] = {
-      val Seq(ic, oc, kh, kw) = rhs.dims
+      val Seq(oc, ic, kh, kw) = rhs.dims
+      assert(kh == kw, s"Only square kernels are supported right now $kh $kw")
       assert(dims.length == 4, s"Convolution can only be done on 4d tensors $dims")
       assert(rhs.dims.length == 4, s"Kernel must have dimmension of 4 $rhs")
       assert(ic == dims(1), s"Kernel input channel should match data ${rhs.dims} $dims")

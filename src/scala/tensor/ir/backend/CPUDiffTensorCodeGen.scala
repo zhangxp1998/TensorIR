@@ -55,6 +55,50 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
         |}
         |""".stripMargin)
   }
+  registerTopLevelFunction("conv_backprop") {
+    emit(
+      """
+        |template
+        |<size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize, size_t padding, size_t stride>
+        |static inline dnnl::convolution_backward_weights::primitive_desc get_convolution_backward_prim_desc(const dnnl::engine& eng) {
+        |  using namespace dnnl;
+        |  memory::dims src_dims = {N, C, H, W};
+        |  memory::dims conv_dst_tz = {N, OC, (H+2*padding-KernelSize+1)/stride, (W+2*padding-KernelSize+1)/stride};
+        |  auto src_md = memory::desc(src_dims, memory::data_type::f32, memory::format_tag::nchw);
+        |  auto conv_weights_md = memory::desc({OC, C, KernelSize, KernelSize}, memory::data_type::f32, memory::format_tag::nchw);
+        |  auto conv_bias_md = memory::desc({OC}, memory::data_type::f32, memory::format_tag::a);
+        |  auto conv_dst_md = memory::desc(conv_dst_tz, memory::data_type::f32, memory::format_tag::nchw);
+        |  memory::dims conv_strides = {stride, stride};
+        |  memory::dims conv_padding = {padding, padding};
+        |  auto conv_pd = get_conv2d_prim_desc<N, C, H, W, OC, KernelSize, padding, stride>(eng);
+        |  auto conv_bwd_weights_desc
+        |          = convolution_backward_weights::desc(algorithm::convolution_direct,
+        |                  src_md, conv_weights_md, conv_bias_md,
+        |                  conv_dst_md, conv_strides, conv_padding, conv_padding);
+        |  auto conv_bwd_weights_pd = convolution_backward_weights::primitive_desc(
+        |          conv_bwd_weights_desc, eng, conv_pd);
+        |  return conv_bwd_weights_pd;
+        |}
+        |
+        |template
+        |<size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize, size_t padding, size_t stride>
+        |static void convolution_backward(const dnnl::engine& eng, dnnl::stream& stream, const memory& diff_dst, const memory& src, const memory& diff_weights, const memory& diff_bias) {
+        |  using namespace dnnl;
+        |  static convolution_backward_weights::primitive_desc prim_desc = get_convolution_backward_prim_desc<N, C, H, W, OC, KernelSize, padding, stride>(eng);
+        |  static auto conv = convolution_backward_weights(prim_desc);
+        |  assert(prim_desc.diff_bias_desc() == diff_bias.get_desc());
+        |  assert(prim_desc.diff_dst_desc() == diff_dst.get_desc());
+        |  assert(prim_desc.diff_weights_desc() == diff_weights.get_desc());
+        |  assert(prim_desc.src_desc() == src.get_desc());
+        |  conv.execute(stream, {
+        |    {DNNL_ARG_SRC, src},
+        |    {DNNL_ARG_DIFF_DST, diff_dst},
+        |    {DNNL_ARG_DIFF_BIAS, diff_bias},
+        |    {DNNL_ARG_DIFF_WEIGHTS, diff_weights}
+        |  });
+        |}
+        |""".stripMargin)
+  }
   override def shallow(n: Node): Unit = n match {
     case Node(s, "matmul-backprop", List(m1, m2, y, d1, d2, Backend.Const(Seq(m: Int, k: Int, n: Int))), _) =>
       emit("matmul_backprop(")
@@ -88,9 +132,16 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emit(", ")
       shallow(diff_gama_beta)
       emit(")")
-    case Node(s, "conv2d-backprop", x::y_x::d::y_d::Backend.Const(Seq(padding: Int, stride: Int)):: gradients, _)=>
-      // TODO implement conv2d backprop
-      emitStubComment(n.op)
+    case Node(s, "conv2d-backprop", List(Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride)), diff_dst, src, diff_weight, diff_bias), _)=>
+      emit(s"convolution_backward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
+      shallow(diff_dst)
+      emit(", ")
+      shallow(src)
+      emit(", ")
+      shallow(diff_weight)
+      emit(", ")
+      shallow(diff_bias)
+      emit(")")
     case _ => super.shallow(n)
   }
   def emitStubComment(op: String): Unit = emit(s"/*Stub for ${op}*/")

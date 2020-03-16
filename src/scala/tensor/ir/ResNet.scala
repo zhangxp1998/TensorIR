@@ -15,7 +15,7 @@ object ResNet {
         }
         class Conv2D(val inChannels: Int, val outChannels: Int, val kernelSize: Int, val stride: Int, val padding: Int) extends Layer {
           val kernels: TensorR[Float] =
-            TensorR.rand(Seq(inChannels, outChannels, kernelSize, kernelSize), AllocationType.Parameter)
+            TensorR.rand(Seq(outChannels, inChannels, kernelSize, kernelSize), AllocationType.Parameter)
           val bias: TensorR[Float] = TensorR.rand(Seq(outChannels), AllocationType.Parameter)
           def forward(x: TensorR[Float]): TensorR[Float]@diff = {
             assert(x.x.dims(1) == inChannels)

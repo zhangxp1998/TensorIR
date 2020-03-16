@@ -150,17 +150,18 @@ trait TensorDifferentiation extends TensorOps {
     def conv2d(that: TensorR[A], bias: TensorR[A], padding: Int, stride: Int): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       assert(d.dims.length == 4)
       assert(that.d.dims.length == 4)
-      val outputSize = x.getConv2dOutputSize(d.dims(1), that.x.dims(1), that.x.dims(2), padding, stride)
+      val Seq(oc, ic, kh, kw) = that.d.dims
+      val outputSize = x.getConv2dOutputSize(ic, oc, kh, padding, stride)
       val y = new TensorR(x.conv2d(that.x, bias.x, padding, stride), Tensor.zero[A](outputSize, AllocationType.Intermediate))
       k(y)
       val gradients = Unwrap(that.d.data)
       val kernels = Unwrap(that.x.data)
       Adapter.g.reflectEffect(
-        "conv2d-backprop", Unwrap(x.data), Unwrap(y.x.data), Unwrap(d.data), Unwrap(y.d.data), Backend.Const(Seq(padding, stride)), gradients
+        "conv2d-backprop", Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, x, that.d, bias.d).map(a => Unwrap(a.memDesc)): _*
       )(
-        Unwrap(x.data), Unwrap(y.x.data), kernels
+        Unwrap(y.d.data), Unwrap(x.data)
       )(
-        Unwrap(d.data), gradients
+        Unwrap(that.d.data), Unwrap(bias.d.data)
       )
     }
     def relu(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
