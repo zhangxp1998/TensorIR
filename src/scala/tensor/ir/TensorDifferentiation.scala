@@ -169,17 +169,17 @@ trait TensorDifferentiation extends TensorOps {
       d.mapInplaceWithFlatIdx(i => __ifThenElse(x.unsafe_apply(i) <= 0.asInstanceOf[A], 0.asInstanceOf[A], 1.asInstanceOf[A]))
     }
 
-    def batchNorm(gamma: TensorR[A], beta: TensorR[A], recomp: Boolean = false): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
-      val cache = x.batchNorm(gamma.x, beta.x)
+    def batchNorm(gamma_beta: TensorR[A], recomp: Boolean = false): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
+      val cache = x.batchNorm(gamma_beta.x)
       val y = new TensorR(cache._1, Tensor.zero[A](cache._1.dims, AllocationType.Gradient))
       k(y)
-      val (outy, xhat, saveMean, saveInvVariance) = if (recomp) x.batchNorm(gamma.x, beta.x) else cache
+      val (_, avg, variance) = if (recomp) x.batchNorm(gamma_beta.x) else cache
       Adapter.g.reflectEffect(
-        "batchNorm-backprop", Seq(x, xhat, saveMean, saveInvVariance, gamma.x, beta.d, d, gamma.d, beta.d).map(a => Unwrap(a.data)): _*
+        "batchNorm-backprop", Backend.Const(d.dims)+:Seq(x, y.d, avg, variance, d).map(a => Unwrap(a.memDesc)): _*
       )(
-        Seq(x, xhat, saveMean, saveInvVariance, gamma.x, beta.x).map(a => Unwrap(a.data)): _*
+        Seq(x, y.d, avg, variance).map(a => Unwrap(a.data)): _*
       )(
-        Seq(d, gamma.d, beta.d).map(a => Unwrap(a.data)): _*
+        Unwrap(d.data)
       )
     }
     def flatten(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>

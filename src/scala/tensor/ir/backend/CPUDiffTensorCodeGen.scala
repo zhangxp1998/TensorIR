@@ -1,7 +1,7 @@
 package scala.tensor.ir.backend
 
 import lms.core.Backend
-import lms.core.Backend.Node
+import lms.core.Backend.{Const, Node}
 
 trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
   registerTopLevelFunction("matmul_backprop") {
@@ -33,7 +33,7 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
     case Node(s, "conv-backprop", List(x, kernel, output, d, kernelD, outputD, Backend.Const(Seq(padding: Int, stride: Int))), _) =>
       // TODO implement convolution backprop
       emitStubComment(n.op)
-    case Node(s, "batchNorm-backprop", List(x, xhat, saveMean, saveInvVariance, gamma, beta, d, gamma_d, beta_d), _) =>
+    case Node(s, "batchNorm-backprop", List(Const(dims: Seq[Int]), src, diff_dst, avg, variance, diff_src), _) =>
       // TODO implement batchnorm backprop
       emitStubComment(n.op)
     case Node(s, "conv2d-backprop", x::y_x::d::y_d::Backend.Const(Seq(padding: Int, stride: Int)):: gradients, _)=>
@@ -41,5 +41,5 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emitStubComment(n.op)
     case _ => super.shallow(n)
   }
-  def emitStubComment(op: String): Unit = emit(s"/*${op}*/")
+  def emitStubComment(op: String): Unit = emit(s"/*Stub for ${op}*/")
 }

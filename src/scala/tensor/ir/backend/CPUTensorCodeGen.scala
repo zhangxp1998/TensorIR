@@ -157,6 +157,60 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
         |}
         |""".stripMargin)
   }
+  registerTopLevelFunction("batchnorm_forward") {
+    emit(
+      """
+        |template
+        |<size_t N, size_t C, size_t H, size_t W>
+        |static inline dnnl::batch_normalization_forward::primitive_desc get_batchnorm_prim_desc(const dnnl::engine& engine) {
+        |  using namespace dnnl;
+        |  memory::dims src_dims = {N, C, H, W};
+        |  auto src_md = memory::desc(src_dims, memory::data_type::f32, memory::format_tag::nchw);
+        |  constexpr float epsilon = 1e-7f;
+        |  // Create operation descriptor.
+        |  auto bnorm_d = batch_normalization_forward::desc(
+        |          prop_kind::forward_training, src_md, epsilon,
+        |          normalization_flags::use_scale_shift);
+        |  auto bnorm_pd
+        |          = batch_normalization_forward::primitive_desc(bnorm_d, engine);
+        |  auto mean_desc = bnorm_pd.mean_desc();
+        |  auto var_desc = bnorm_pd.variance_desc();
+        |  auto weight_desc = bnorm_pd.weights_desc();
+        |  assert(mean_desc.data.ndims == 1);
+        |  assert(mean_desc.dims()[0] == C);
+        |  assert(var_desc.data.ndims == 1);
+        |  assert(var_desc.dims()[0] == C);
+        |//  assert(workspace_desc.data.ndims == 0);
+        |  assert(weight_desc.data.ndims == 2);
+        |  assert(weight_desc.dims()[0] == 2);
+        |  assert(weight_desc.dims()[1] == C);
+        |//  assert(workspace_desc.dims()[0] == C*H*W);
+        |  return bnorm_pd;
+        |}
+        |
+        |template
+        |<size_t N, size_t C, size_t H, size_t W>
+        |static void batchnorm_forward(const dnnl::engine& eng, dnnl::stream& stream,
+        |     const dnnl::memory& src, const dnnl::memory& avg, const dnnl::memory& variance,
+        |     const dnnl::memory& scale_shift, const dnnl::memory& dst) {
+        |  using namespace dnnl;
+        |  static batch_normalization_forward::primitive_desc prim_desc = get_batchnorm_prim_desc<N, C, H, W>(eng);
+        |  static auto batchnorm = batch_normalization_forward(prim_desc);
+        |  assert(src.get_desc() == prim_desc.src_desc());
+        |  assert(avg.get_desc() == prim_desc.mean_desc());
+        |  assert(variance.get_desc() == prim_desc.variance_desc());
+        |  assert(scale_shift.get_desc() == prim_desc.weights_desc());
+        |  assert(dst.get_desc() == prim_desc.dst_desc());
+        |  batchnorm.execute(stream, {
+        |    {DNNL_ARG_SRC, src},
+        |    {DNNL_ARG_MEAN, avg},
+        |    {DNNL_ARG_VARIANCE, variance},
+        |    {DNNL_ARG_SCALE_SHIFT, scale_shift},
+        |    {DNNL_ARG_DST, dst}
+        |  });
+        |}
+        |""".stripMargin)
+  }
   registerTopLevelFunction("bump_allocate") {
     emit(
       """
@@ -307,6 +361,20 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
     case Node(s, "tensor-convolution", List(mA, data, kernel, output, Const(dims: Seq[Int]), Const(kernelDims: Seq[Int])), _) =>
       // TODO implement convolution, this is just a stub
       emit("/*Stub for tensor convolution TODO implement this*/")
+    case Node(s, "batchnorm-forward", List(Const(dims: Seq[Int]), Const(epsilon: Float), src, avg, variance, gamma_beta, dst), _) =>
+      // TODO support custom epsilon
+      val Seq(n, c, h, w) = dims
+      emit(s"batchnorm_forward<$n, $c, $h, $w>(eng, stream, ")
+      shallow(src)
+      emit(", ")
+      shallow(avg)
+      emit(", ")
+      shallow(variance)
+      emit(", ")
+      shallow(gamma_beta)
+      emit(", ")
+      shallow(dst)
+      emit(")")
     case Node(s, "max", List(lhs, rhs), _) =>
       emit(s"std::max<${remap(typeMap(s))}>(")
       shallow(lhs)

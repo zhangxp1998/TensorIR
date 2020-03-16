@@ -24,11 +24,10 @@ object ResNet {
           def parameters(): Seq[TensorR[Float]] = Seq(kernels, bias)
         }
         class BatchNorm(val inChannels: Int) extends Layer {
-          val beta = TensorR.rand(Seq(inChannels), AllocationType.Parameter)
-          val gamma = TensorR.rand(Seq(inChannels), AllocationType.Parameter)
-          override def forward(x: TensorR[Float]): TensorR[Float]@diff = x.batchNorm(gamma, beta)
+          val gamma_beta = TensorR.rand(Seq(2, inChannels), AllocationType.Parameter)
+          override def forward(x: TensorR[Float]): TensorR[Float]@diff = x.batchNorm(gamma_beta)
 
-          override def parameters(): Seq[TensorR[Float]] = Seq(beta, gamma)
+          override def parameters(): Seq[TensorR[Float]] = Seq(gamma_beta)
         }
         class ReLU() extends Layer {
           override def forward(x: TensorR[Float]): TensorR[Float]@diff = x.relu()

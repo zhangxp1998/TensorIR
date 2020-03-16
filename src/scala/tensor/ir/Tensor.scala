@@ -272,7 +272,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val mA = Backend.Const(manifest[A])
       val outputSize = getConv2dOutputSize(dims(1), oc, kh, padding, stride)
       val output = Tensor[A](outputSize, AllocationType.Intermediate)
-      val kernelsUnwrapped = Unwrap(rhs)
+      val kernelsUnwrapped = Unwrap(rhs.data)
       Wrap[Unit](Adapter.g.reflectEffect(
         "tensor-convolution2d",
         mA, Unwrap(memDesc), Unwrap(output.memDesc), Unwrap(rhs.memDesc), Unwrap(bias.memDesc), Backend.Const(dims), Backend.Const(Seq(oc, kh, padding, stride))
@@ -354,17 +354,24 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     private def subBatchAvg(avg: Tensor[A]): Tensor[A] = {
       channelBroadcast(avg, infix_-)
     }
-    def batchNorm(gamma: Tensor[A], beta: Tensor[A]): (Tensor[A], Tensor[A], Tensor[A], Tensor[A]) = {
-      assert(gamma.dims == Seq(dims(1)), s"Gamma should be same size as channels $dims ${gamma.dims}")
-      assert(beta.dims == gamma.dims, s"Beta and Gamma should have same dims ${beta.dims} ${gamma.dims}")
-      val saveMean = batchNormAvg()
-      val diff = subBatchAvg(saveMean)
-      val saveInvVariance = diff.square().batchNormAvg()
+    def batchNorm(gamma_beta: Tensor[A]) = {
+      assert(dims.length == 4, "BatchNorm only supports 4d tensor")
+      val Seq(n, c, h, w) = dims
+      assert(gamma_beta.dims == Seq(2, c), s"Beta and Gamma should have dims ${Seq(2, c)}")
+      val dst = Tensor[A](dims, AllocationType.Intermediate)
       val epsilon = 0.00001f
-      val xhat = diff.channelBroadcast((saveInvVariance + epsilon.asInstanceOf[A]).sqrt(), infix_/)
-      val outy = xhat.channelBroadcast(gamma, infix_*).channelBroadcast(beta, infix_+)
-      // runningMean and runningVariance should also be updated???
-      (outy, xhat, saveMean, saveInvVariance)
+      val avg = Tensor[A](Seq(c), AllocationType.Intermediate)
+      val variance = Tensor[A](Seq(c), AllocationType.Intermediate)
+      Wrap[Unit](
+        Adapter.g.reflectEffect(
+          "batchnorm-forward", Backend.Const(dims)+:Backend.Const(epsilon)+:Seq(this, avg, variance, gamma_beta, dst).map(a => Unwrap(a.memDesc)): _*
+        )(
+          Unwrap(data), Unwrap(gamma_beta.data)
+        )(
+          Seq(dst, avg, variance).map(a => Unwrap(a.data)): _*
+        )
+      )
+      (dst, avg, variance)
     }
     def flatten(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
