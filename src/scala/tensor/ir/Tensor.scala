@@ -322,38 +322,6 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         (block.eff.wkeys + Unwrap(data)).toSeq: _*
       ))
     }
-    def batchNormAvg(): Tensor[A] = {
-      assert(this.dims.length == 4, "tensor for batch normal averaging should have 4 dimensions")
-      val base = dims.product/dims(1)
-      val res = Tensor.zero[A](Seq(dims(1)), AllocationType.Intermediate)
-
-      for (batch <- DataLoop(dims(0))) {
-        val offsetBatch = batch * strides(0)
-        for (channel <- DataLoop(dims(1))) {
-          val offset = offsetBatch + channel * strides(1)
-          res.data(channel) = infix_+(res.data(channel), accumulateRange(offset, offset + strides(1)))
-        }
-      }
-      res.mapInplace(a => infix_/(a, base.asInstanceOf[A]))
-      res
-    }
-    private def channelBroadcast(avg: Tensor[A], f: (Rep[A], Rep[A]) => Rep[A]): Tensor[A] = {
-      assert(avg.dims.size == 1)
-      assert(avg.dims.head == dims(1))
-      val output = copy()
-
-      for (batch <- DataLoop(dims(0))) {
-        val offsetBatch = batch * strides(0)
-        for (channel <- DataLoop(dims(1))) {
-          val offset = offsetBatch + channel * strides(1)
-          transformRange(offset, offset + strides(1), a => f(a, avg.unsafe_apply(channel)))
-        }
-      }
-      output
-    }
-    private def subBatchAvg(avg: Tensor[A]): Tensor[A] = {
-      channelBroadcast(avg, infix_-)
-    }
     def batchNorm(gamma_beta: Tensor[A]) = {
       assert(dims.length == 4, "BatchNorm only supports 4d tensor")
       val Seq(n, c, h, w) = dims
