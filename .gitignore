@@ -10,3 +10,4 @@ snippet
 snippet.cpp
 snippet.dSYM
 memory.z3
+gen/build
