@@ -188,6 +188,12 @@ trait TensorDifferentiation extends TensorOps {
       k(y)
       d = y.d
     }
+    def sum(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x.sumT(), Tensor.zero[A](Seq(1), AllocationType.Gradient))
+      k(y)
+      val gradient = y.d.unsafe_apply(0)
+      d.transformRange(0, d.dims.product, _ => gradient)
+    }
   }
 }
 

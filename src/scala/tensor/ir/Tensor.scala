@@ -84,6 +84,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def sqrt(a: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("sqrt", Unwrap(a)))
 
     lazy val strides = dims.scanRight(1)(_ * _).tail
+    lazy val totalSize = dims.product
     def this(dims: Seq[Int], allocType: AllocationType) {
       this(dims, null, allocType)
       data = {
@@ -123,7 +124,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
     }
     def mapInplace(f: Rep[A] => Rep[A]): Unit = {
-      transformRange(0, dims.product, f)
+      transformRange(0, totalSize, f)
     }
     def mapInplaceWithFlatIdx(f: Rep[Int] => Rep[A]): Unit = {
       val mA = Backend.Const(manifest[A])
@@ -301,7 +302,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val mA = Backend.Const(manifest[A])
       Wrap[A](Adapter.g.reflectRead("tensor-accumulate-range", mA, Unwrap(data), Unwrap(begin), Unwrap(end))(Unwrap(data)))
     }
-    def sum(): Rep[A] = accumulateRange(0, dims.product)
+    def sum(): Rep[A] = accumulateRange(0, totalSize)
     def square(): Tensor[A] = {
       val output = copy()
       output.mapInplace(a => infix_*(a, a))
@@ -312,6 +313,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       output.mapInplace(sqrt)
       output
     }
+    def transform(f: Rep[A] => Rep[A]): Unit = transformRange(0, totalSize, f)
     def transformRange(begin: Rep[Int], end: Rep[Int], f: Rep[A] => Rep[A]): Unit = {
       val mA = Backend.Const(manifest[A])
       val block = Adapter.g.reify(exp => Unwrap(f(Wrap[A](exp))))
@@ -342,11 +344,17 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       )
       (dst, avg, variance)
     }
+    def sumT(): Tensor[A] = {
+      val res = Tensor[A](Seq(1), AllocationType.Intermediate)
+      val sumVal = sum()
+      res.unsafe_update(0, sumVal)
+      res
+    }
     def flatten(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
       new Tensor(
-        Seq(dims.product),
+        Seq(totalSize),
         Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE)),
         allocType
       )
