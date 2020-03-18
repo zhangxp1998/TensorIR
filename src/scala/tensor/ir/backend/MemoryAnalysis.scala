@@ -56,21 +56,29 @@ class MemoryPlanningTraverser extends Traverser {
   lazy val events = {
     MemoryPlanningTraverser.toEvents(requests.toMap)
   }
+  def typeSize(mA: Manifest[_]) = mA.toString() match {
+    case "Boolean" => 1
+    case "Float" => 4
+    case "Double" => 8
+    case "Int" => 4
+  }
   override def traverse(n: Node): Unit = {
     n match {
-      case Node(n, "tensor-new", List(mA, Backend.Const(dims: Seq[Int]), Const(allocType: AllocationType.AllocationType)), _) =>
-        requests(n) = new MemoryRequest(getTime(), getTime(), n, dims.product, null, false, allocType)
-      case Node(n, "tensor-copy", _:: src :: dims :: Const(allocType: AllocationType.AllocationType)::Nil, eff) =>
-        val size = (dims match {case Backend.Const(seq: Seq[Int]) => seq}).product
+      case Node(n, "tensor-new", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), Const(allocType: AllocationType.AllocationType)), _) =>
+        requests(n) = new MemoryRequest(getTime(), getTime(), n, dims.product * typeSize(mA), null, false, allocType)
+      case Node(n, "tensor-copy", _:: src :: Const(dims: Seq[Int]) :: Const(allocType: AllocationType.AllocationType)::Nil, eff) =>
         src match {
           case exp: Exp => exp match {
             case s@Sym(_) =>
+              val size = requests(s).size
               requests(n) = new MemoryRequest(getTime(), getTime(), n, size, s, true, allocType)
               requests(s).deallocatedTime = getTime()
               requests(s).lastUseSym = n
           }
         }
-      case Node(n, _, _, eff) =>
+      case Node(n, op, _, eff) =>
+        assert(op != "tensor-new", s"$op should be already handled.")
+        assert(op != "tensor-copy", s"$op should be already handled.")
         (eff.rkeys ++ eff.wkeys).foreach{
           case s@Sym(_) =>
             requests.get(s) match {
