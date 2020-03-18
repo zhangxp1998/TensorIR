@@ -15,8 +15,8 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
         |  // m1: M*K, m2: K*N, y: M*N
         |  // d1 += y * m2.T => M*N x N*K = M*K
         |  // d2 += m1.T * y => K*M x M*N = K*N
-        |  cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, M, N, K, 1.0f, y, M, m2, K, 1.0f, d1, M);
-        |  cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, K, M, N, 1.0f, m1, M, y, M, 1.0f, d2, M);
+        |  dnnl_sgemm('N', 'T', M, N, K, 1.0f, y, M, m2, K, 1.0f, d1, M);
+        |  dnnl_sgemm('T', 'N', K, M, N, 1.0f, m1, M, y, M, 1.0f, d2, M);
         |}
         |""".stripMargin)
   }

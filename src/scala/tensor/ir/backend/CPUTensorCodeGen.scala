@@ -86,9 +86,8 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
   var totalMemory: Int = 0
   var allocationPlan: Map[Int, MemoryBlock] = Map()
   registerHeader("<string.h>", "<algorithm>")
-  registerHeader("<cblas.h>", "<dnnl.hpp>")
+  registerHeader("<dnnl.hpp>")
   registerHeader("<sys/mman.h>", "<unistd.h>")
-  registerLibrary("-L/opt/OpenBLAS/lib", "-I/opt/OpenBLAS/include", "-lopenblas", "-g")
   registerLibrary("-lmkldnn")
   registerDatastructures("heap") {
     emit("char *heap = NULL;")
@@ -304,7 +303,7 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       if (mA.toString != "Float") {
         throw new RuntimeException(s"Only floating point values are supported: ${mA.toString}")
       }
-      emit(s"cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, $m, $n, $k, 1, ")
+      emit(s"dnnl_sgemm('N', 'N', $m, $n, $k, 1, ")
       shallow(lhs)
       emit(s", $m, ")
       shallow(rhs)
