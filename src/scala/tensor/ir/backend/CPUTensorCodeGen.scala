@@ -88,7 +88,6 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
   registerHeader("<string.h>", "<algorithm>")
   registerHeader("<dnnl.hpp>")
   registerHeader("<sys/mman.h>", "<unistd.h>")
-  registerLibrary("-lmkldnn")
   registerDatastructures("heap") {
     emit("char *heap = NULL;")
   }
