@@ -1,7 +1,7 @@
 #ifndef __TENSOR_H
 #define __TENSOR_H
 #include <dnnl.hpp>
-constexpr float epsilon = 1e-7f;
+#include "tensor_constants.h"
 template <size_t N, size_t C, size_t H, size_t W, size_t OutChannels,
           size_t KernelSize, size_t padding, size_t stride>
 static dnnl::convolution_forward::primitive_desc
@@ -65,7 +65,7 @@ get_batchnorm_prim_desc(const dnnl::engine &engine) {
       memory::desc(src_dims, memory::data_type::f32, memory::format_tag::nchw);
   // Create operation descriptor.
   auto bnorm_d = batch_normalization_forward::desc(
-      prop_kind::forward_training, src_md, epsilon,
+      prop_kind::forward_training, src_md, EPSILON,
       normalization_flags::use_scale_shift);
   auto bnorm_pd = batch_normalization_forward::primitive_desc(bnorm_d, engine);
   auto mean_desc = bnorm_pd.mean_desc();

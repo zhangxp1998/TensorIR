@@ -8,7 +8,7 @@ set(CMAKE_CXX_FLAGS "-fno-rtti")
 
 find_package(MKLDNN REQUIRED)
 
-add_executable(snippet snippet.cpp tensor.h)
+add_executable(snippet snippet.cpp tensor.h tensor_diff.h tensor_constants.h)
 
 target_link_libraries(snippet
   PRIVATE
