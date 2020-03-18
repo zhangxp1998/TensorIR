@@ -136,7 +136,7 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(s"((${remap(manifest)}*)malloc(${dims.product} * sizeof(${remap(manifest)})))")
     case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::src, eff) =>
       if (src.isEmpty)
-        emit(s"((${remap(manifest)}*)(heap+${blk.begin} * sizeof(${remap(manifest)})))")
+        emit(s"((${remap(manifest)}*)(heap+${blk.begin}))")
       else
         shallow(src.head)
 
@@ -181,7 +181,7 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(byteSize.toString)
       emit(")))")
     case Node(s, "heap-offset-copy", Const(manifest: Manifest[_])::tensor::Const(blk: MemoryBlock)::Const(dims: Seq[Int])::_, eff) =>
-      emit(s"((${remap(manifest)} *)memcpy(heap+${blk.begin} * sizeof(${remap(manifest)}), ")
+      emit(s"((${remap(manifest)} *)memcpy(heap+${blk.begin}, ")
       shallow(tensor)
       val byteSize = s"${dims.product} * sizeof(${remap(manifest)})"
       emit(s", $byteSize))")
