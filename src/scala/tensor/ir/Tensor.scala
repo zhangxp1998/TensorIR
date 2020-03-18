@@ -49,17 +49,17 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
   trait MemDesc {
   }
   object Tensor {
-    def apply[A: Manifest: Numeric](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
+    def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       new Tensor(xs, allocType)
     }
-    def fill[A: Manifest: Numeric](dims: Seq[Int], fillVal: A, allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
+    def fill[A: Manifest: Ordering](dims: Seq[Int], fillVal: A, allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       val tensor = Tensor[A](dims, allocType)
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor.data), Unwrap(fillVal), Backend.Const(dims))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", unwrapped_xs:_*)(Unwrap(tensor.data)))
       tensor
     }
-    def zero[A: Manifest: Numeric](dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
+    def zero[A: Manifest: Ordering](dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       Tensor.fill[A](dims, 0.asInstanceOf[A], allocType)
     }
     def rand(dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = {
@@ -70,11 +70,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def createMemDims(dims: Seq[Int]): Rep[MemDims] = {
       Wrap[MemDims](Adapter.g.reflect("mem-dims", Backend.Const(dims)))
     }
-    def createMemDesc[A: Manifest: Numeric](memDims: Rep[MemDims], tensor: Tensor[A]): Rep[MemDesc] = {
+    def createMemDesc[A: Manifest: Ordering](memDims: Rep[MemDims], tensor: Tensor[A]): Rep[MemDesc] = {
       Wrap[MemDesc](Adapter.g.reflect("mem-desc", Unwrap(memDims), Unwrap(tensor.data), Backend.Const(tensor.dims)))
     }
   }
-  class Tensor[A: Manifest: Numeric] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
+  class Tensor[A: Manifest: Ordering] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
     lazy val memDims: Rep[MemDims] = Tensor.createMemDims(dims)
     lazy val memDesc: Rep[MemDesc] = Tensor.createMemDesc(memDims, this)
     def infix_+(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("+", Unwrap(a), Unwrap(b)))
@@ -359,6 +359,21 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         allocType
       )
     }
+
+    private def boolean_op(rhs: Tensor[A], boolean_operator: String): Tensor[Boolean] = {
+      val res = Tensor[Boolean](dims, AllocationType.Intermediate)
+      res.mapInplaceWithFlatIdx(idx =>
+        Wrap[Boolean](Adapter.g.reflect(boolean_operator, Unwrap(unsafe_apply(idx)), Unwrap(rhs.unsafe_apply(idx))))
+      )
+      res
+    }
+    // Element-wise comparison on tensor
+    def ==(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, "==")
+    def <=(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, "<=")
+    def >=(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, ">=")
+    def !=(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, "!=")
+    def <(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, "<")
+    def >(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, ">")
   }
   def println(x: Tensor[_]): Unit = {
     println(x.data)
