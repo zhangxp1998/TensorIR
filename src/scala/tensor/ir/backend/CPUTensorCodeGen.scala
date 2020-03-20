@@ -98,7 +98,7 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
     emit("dnnl::stream stream(eng);")
   }
   registerInit("heap_init") {
-    emit("heap = (char*)get_mem(1024*1024*1024);")
+    emit("heap = (char*)get_mem(1024UL*1024*1024*8);")
   }
   registerTopLevelFunction("tensor_copy"){
     emit(
@@ -118,6 +118,9 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
         |  size = (size + page_size - 1) / page_size * page_size;
         |  void *p = mmap(NULL, size, PROT_READ | PROT_WRITE,
         |                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        |  if (p == NULL) {
+        |     perror("mmap() failed");
+        |  }
         |  return p;
         |}
         |""".stripMargin)
@@ -281,6 +284,11 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(")")
     case Node(s, "mem-dims", List(Backend.Const(dims: Seq[Int])), _) =>
       emit(s"dnnl::memory::dims({${ dims.mkString(", ")} })")
+    case Node(s, "tensor-fread", List(Const(mA: Manifest[_]), data, Const(path: String), Const(dims: Seq[Int])), _) =>
+      val byteSize = s"(${dims.product} * sizeof(${remap(mA)}))"
+      emit("load_file(")
+      shallow(data)
+      emit(s", ${quote(path)}, $byteSize)")
     case Node(s, "mem-desc", List(memDims, data, Const(dims: Seq[Int])), _) =>
       emit("dnnl::memory({")
       shallow(memDims)
@@ -294,6 +302,9 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       shallow(data)
       emit(")")
     case _ => super.shallow(node)
+  }
+  def quote(s: String): String = {
+    "\"" + s.replaceAllLiterally("\\", "\\\\") + "\""
   }
   def format(x: Def): String = x match {
     case exp: Exp => exp match {

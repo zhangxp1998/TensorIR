@@ -77,10 +77,10 @@ object ResNet {
         }
         class ResNet extends Layer {
           val layer = new Sequential(
-            new Conv2D(3, 8, 3, 1, 1),
-            new BatchNorm(8),
+            new Conv2D(1, 3, 3, 1, 1),
+            new BatchNorm(3),
             new ReLU(),
-            new ResidualBlock(8, 16, 2),
+            new ResidualBlock(3, 8, 2),
           )
 
           override def forward(x: TensorR[Float]): TensorR[Float]@diff = layer.forward(x)
@@ -97,9 +97,10 @@ object ResNet {
           }
         }
 
-        val batchSize = 10
-        val imgSize = 32
-        val input = Tensor.rand(Seq(batchSize, 3, imgSize, imgSize), AllocationType.Data)
+        val batchSize = 6000
+        val imgSize = 28
+        val input = Tensor[Float](Seq(batchSize, 1, imgSize, imgSize), AllocationType.Data)
+        input.fread("gen/train_images.bin")
         val resNet = new ResNet()
         val optimizer = new GradientDescent(resNet, 0.01)
 

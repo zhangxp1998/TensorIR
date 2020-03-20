@@ -374,6 +374,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def !=(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, "!=")
     def <(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, "<")
     def >(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, ">")
+
+    def fread(path: String): Unit = {
+      val mA = Backend.Const(manifest[A])
+      Wrap[Unit](Adapter.g.reflectEffect("tensor-fread", mA, Unwrap(data), Backend.Const(path), Backend.Const(dims))(Adapter.CTRL)(Unwrap(data)))
+    }
   }
   def println(x: Tensor[_]): Unit = {
     println(x.data)
