@@ -105,5 +105,5 @@ void batchnorm_forward(const dnnl::engine &eng, dnnl::stream &stream,
                              {DNNL_ARG_DST, dst}});
 }
 
-void load_file(char *data, const char *path, size_t size);
+void load_file(void *data, const char *path, size_t size);
 #endif
