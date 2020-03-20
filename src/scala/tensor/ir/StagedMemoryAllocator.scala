@@ -8,22 +8,22 @@ object StagedMemoryAllocator {
   class MemoryEvent {
 
   }
-  case class Allocation(id: Int, size: Int) extends MemoryEvent
-  case class Deallocation(id: Int, size: Int, afterSym: Sym) extends MemoryEvent
+  case class Allocation(id: Int, Long: Int) extends MemoryEvent
+  case class Deallocation(id: Int, Long: Int, afterSym: Sym) extends MemoryEvent
 
-  case class MemoryBlock(begin: Int, size: Int)
+  case class MemoryBlock(begin: Long, size: Long)
 
   def allocate(events: Seq[MemoryEvent]): mutable.TreeMap[Int, MemoryBlock] = {
     if (events.isEmpty) { return mutable.TreeMap() }
     // From size to memory block
-    val freelist = new mutable.TreeMap[Int, mutable.Set[MemoryBlock]]()
+    val freelist = new mutable.TreeMap[Long, mutable.Set[MemoryBlock]]()
     val maxsize = events.filter(_.isInstanceOf[Allocation]).map{case Allocation(_, size) => size.toLong}.sum
 
-    freelist.put(maxsize.toInt, mutable.Set(MemoryBlock(0, maxsize.toInt)))
-    def freeMem = freelist.values.map(blks => blks.toSeq.map(b => b.size).sum).sum
+    freelist.put(maxsize, mutable.Set(MemoryBlock(0, maxsize)))
+    def freeMem: Long = freelist.values.map(blks => blks.toSeq.map(b => b.size).sum).sum
 
-    var mem_used = 0;
-    var min_mem = 0;
+    var mem_used: Long = 0;
+    var min_mem: Long = 0;
 
     val allocationPlan = new mutable.TreeMap[Int, MemoryBlock]()
     events.foreach {

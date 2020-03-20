@@ -11,7 +11,7 @@ import scala.collection.mutable
 
 class CPUMemoryPlanningTransformer(val allocationPlan: Map[Int, MemoryBlock], val reusedSyms: Map[Sym, Sym]) extends Transformer {
   g = Adapter.mkGraphBuilder()
-  val totalMemory: Int = {
+  val totalMemory: Long = {
     if (allocationPlan.isEmpty) 0 else {
       val maxBlock = allocationPlan.values.maxBy(_.begin)
       maxBlock.begin + maxBlock.size
