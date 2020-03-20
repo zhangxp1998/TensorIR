@@ -41,7 +41,7 @@ get_conv2d_prim_desc(const dnnl::engine &eng) {
 }
 template <size_t N, size_t C, size_t H, size_t W, size_t OutChannels,
           size_t KernelSize, size_t padding, size_t stride>
-static void
+void
 conv2d_forward(const dnnl::engine &eng, dnnl::stream &stream,
                const dnnl::memory &input, const dnnl::memory &output,
                const dnnl::memory &weights, const dnnl::memory &bias) {
@@ -57,7 +57,7 @@ conv2d_forward(const dnnl::engine &eng, dnnl::stream &stream,
 }
 
 template <size_t N, size_t C, size_t H, size_t W>
-static inline dnnl::batch_normalization_forward::primitive_desc
+dnnl::batch_normalization_forward::primitive_desc
 get_batchnorm_prim_desc(const dnnl::engine &engine) {
   using namespace dnnl;
   memory::dims src_dims = {N, C, H, W};
@@ -84,7 +84,7 @@ get_batchnorm_prim_desc(const dnnl::engine &engine) {
 }
 
 template <size_t N, size_t C, size_t H, size_t W>
-static void batchnorm_forward(const dnnl::engine &eng, dnnl::stream &stream,
+void batchnorm_forward(const dnnl::engine &eng, dnnl::stream &stream,
                               const dnnl::memory &src, const dnnl::memory &avg,
                               const dnnl::memory &variance,
                               const dnnl::memory &scale_shift,
@@ -104,4 +104,6 @@ static void batchnorm_forward(const dnnl::engine &eng, dnnl::stream &stream,
                              {DNNL_ARG_SCALE_SHIFT, scale_shift},
                              {DNNL_ARG_DST, dst}});
 }
+
+void load_file(char *data, const char *path, size_t size);
 #endif

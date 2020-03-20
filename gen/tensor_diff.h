@@ -12,7 +12,7 @@ void matmul_backprop(const float *m1, const float *m2, const float *y,
   dnnl_sgemm('T', 'N', K, M, N, 1.0f, m1, M, y, M, 1.0f, d2, M);
 }
 template <size_t N, size_t C, size_t H, size_t W>
-static inline dnnl::batch_normalization_backward::primitive_desc
+dnnl::batch_normalization_backward::primitive_desc
 get_batchnorm_backward_prim_desc(const dnnl::engine &eng) {
   using namespace dnnl;
   memory::dims src_dims = {N, C, H, W};
@@ -28,7 +28,7 @@ get_batchnorm_backward_prim_desc(const dnnl::engine &eng) {
 }
 
 template <size_t N, size_t C, size_t H, size_t W>
-static void batchnorm_backward(const dnnl::engine &eng, dnnl::stream &stream,
+void batchnorm_backward(const dnnl::engine &eng, dnnl::stream &stream,
                                const dnnl::memory &src, const dnnl::memory &diff_src,
                                const dnnl::memory &diff_dst, const dnnl::memory &avg,
                                const dnnl::memory &variance, const dnnl::memory &gamma_beta,
@@ -49,7 +49,7 @@ static void batchnorm_backward(const dnnl::engine &eng, dnnl::stream &stream,
 }
 template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
           size_t padding, size_t stride>
-static inline dnnl::convolution_backward_weights::primitive_desc
+inline dnnl::convolution_backward_weights::primitive_desc
 get_convolution_backward_prim_desc(const dnnl::engine &eng) {
   using namespace dnnl;
   memory::dims src_dims = {N, C, H, W};
@@ -79,7 +79,7 @@ get_convolution_backward_prim_desc(const dnnl::engine &eng) {
 
 template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
           size_t padding, size_t stride>
-static void convolution_backward(const dnnl::engine &eng, dnnl::stream &stream,
+void convolution_backward(const dnnl::engine &eng, dnnl::stream &stream,
                                  const dnnl::memory &diff_dst, const dnnl::memory &src,
                                  const dnnl::memory &diff_weights,
                                  const dnnl::memory &diff_bias) {
