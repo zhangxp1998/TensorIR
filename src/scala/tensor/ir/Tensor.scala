@@ -350,6 +350,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       res.unsafe_update(0, sumVal)
       res
     }
+    def max(): Rep[A] = {
+      Wrap[A](Adapter.g.reflectRead("tensor-max", Unwrap(data), Backend.Const(dims))(Unwrap(data)))
+    }
     def flatten(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))

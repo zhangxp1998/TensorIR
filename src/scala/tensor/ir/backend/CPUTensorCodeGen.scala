@@ -52,6 +52,8 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       partialPlan(sym.n) = MemoryBlock(memused, request.size)
       memused += request.size
     }
+    val lastBlk = partialPlan.values.maxBy(b => b.begin + b.size)
+    println(s"Memory Usage: ${lastBlk.begin + lastBlk.size}")
     partialPlan
   }
   def memoryPlanning(g: Graph): Graph = {
@@ -272,6 +274,13 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(", ")
       shallow(rhs)
       emit(")")
+    case Node(s, "tensor-max", List(data, Const(dims: Seq[Int])), _) =>
+      val size = dims.product
+      emit(s"std::max_element(")
+      shallow(data)
+      emit(", ")
+      shallow(data)
+      emit(s" + $size)")
     case Node(s, "tensor-convolution2d", List(mA, input, output, kernels, bias, Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride))), _) =>
       emit(s"conv2d_forward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
       shallow(input)
