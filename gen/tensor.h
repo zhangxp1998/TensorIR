@@ -1,6 +1,12 @@
 #ifndef __TENSOR_H
 #define __TENSOR_H
+#include <cstdint>
 #include <dnnl.hpp>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <stdlib.h>
 #include "tensor_constants.h"
 template <size_t N, size_t C, size_t H, size_t W, size_t OutChannels,
           size_t KernelSize, size_t padding, size_t stride>
@@ -105,5 +111,51 @@ void batchnorm_forward(const dnnl::engine &eng, dnnl::stream &stream,
                              {DNNL_ARG_DST, dst}});
 }
 
-void load_file(void *data, const char *path, size_t size);
+template <typename FileType, typename DataType>
+void load_bin_convert(DataType* data, const char *path, size_t elem_count) {
+    int err = 0;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        perror("open() failed!");
+        abort();
+    }
+
+    struct stat file_stat{};
+    err = fstat(fd, &file_stat);
+    if (err < 0) {
+        perror("fstat() failed");
+        abort();
+    }
+    size_t bytes = file_stat.st_size;
+
+    void *p = mmap(NULL, bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (p == MAP_FAILED) {
+        perror("mmap() failed");
+        abort();
+    }
+    assert(elem_count <= bytes/sizeof(FileType));
+    FileType *file = static_cast<FileType*>(p);
+    for (size_t i = 0; i < elem_count; i ++) {
+        data[i] = static_cast<DataType>(file[i]);
+    }
+    munmap(file, bytes);
+    close(fd);
+}
+
+template <typename DataType>
+void mmap_file(const char *path, size_t size) {
+    int err = 0;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        perror("open() failed!");
+        abort();
+    }
+
+    void *p = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (p == MAP_FAILED) {
+        perror("mmap() failed");
+        abort();
+    }
+    return static_cast<DataType*>(p);
+}
 #endif
