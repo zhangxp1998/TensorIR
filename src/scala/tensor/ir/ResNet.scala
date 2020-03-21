@@ -100,7 +100,7 @@ object ResNet {
         val batchSize = 6000
         val imgSize = 28
         val input = Tensor[Float](Seq(batchSize, 1, imgSize, imgSize), AllocationType.Data)
-        input.fread("gen/train_images.bin")
+        input.fread("train_images.bin", "uint8_t")
         val resNet = new ResNet()
         val optimizer = new GradientDescent(resNet, 0.01)
 

@@ -42,6 +42,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       }
     }
   }
+  def exp[T: Manifest: Ordering](x: Rep[T]): Rep[T] = {
+    Wrap[T](Adapter.g.reflect("exp", Unwrap(x)))
+  }
   // A trait that maps to dnnl::memory::dims. It holds the dimension of tensors at runtime
   trait MemDims {
   }
@@ -353,6 +356,37 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def max(): Rep[A] = {
       Wrap[A](Adapter.g.reflectRead("tensor-max", Unwrap(data), Backend.Const(dims))(Unwrap(data)))
     }
+    def softmax(): Tensor[A] = {
+      val (rows, rowSize) = dims.length match {
+        case 1 => (1, dims.head)
+        case _ => (dims.head, dims.product/dims.head)
+      }
+      val probs = this - max()
+      probs.mapInplace(exp)
+      for (i <- DataLoop(rows)) {
+        val begin = i*rowSize
+        val end = begin + rowSize
+        val sum = probs.accumulateRange(begin, end)
+        probs.transformRange(begin, end, a => infix_/(a, sum))
+      }
+      probs
+    }
+    def softmaxLoss(labels: Tensor[Int]) = {
+      assert(labels.dims.length == 1, s"Label should be a 1D Tensor ${labels.dims}")
+      val (rows, rowSize) = dims.length match {
+        case 1 => (1, dims.head)
+        case _ => (dims.head, dims.product/dims.head)
+      }
+      assert(labels.dims.head == rows, s"Labels should have same head dimension with data: ${rows}, ${labels.dims.head}")
+      val probs = softmax()
+      val sum: Var[A] = var_new[A](0.asInstanceOf[A])
+      for (i <- DataLoop(rows)) {
+        val begin = i*rowSize
+        val y = probs.unsafe_apply((begin+ labels.unsafe_apply(i)))
+        __assign(sum, infix_+(readVar(sum), y))
+      }
+      infix_/(readVar(sum), rows.asInstanceOf[A])
+    }
     def flatten(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
@@ -378,9 +412,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def <(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, "<")
     def >(rhs: Tensor[A]): Tensor[Boolean] = boolean_op(rhs, ">")
 
-    def fread(path: String): Unit = {
+    def fread(path: String, dtype: String): Unit = {
       val mA = Backend.Const(manifest[A])
-      Wrap[Unit](Adapter.g.reflectEffect("tensor-fread", mA, Unwrap(data), Backend.Const(path), Backend.Const(dims))(Adapter.CTRL)(Unwrap(data)))
+      Wrap[Unit](Adapter.g.reflectEffect("tensor-fread", mA, Unwrap(data), Backend.Const(path), Backend.Const(dims), Backend.Const(dtype))(Adapter.CTRL)(Unwrap(data)))
     }
   }
   def println(x: Tensor[_]): Unit = {

@@ -281,6 +281,10 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(", ")
       shallow(data)
       emit(s" + $size)")
+    case Node(s, "exp", List(x), _) =>
+      emit("std::exp(")
+      shallow(x)
+      emit(")")
     case Node(s, "tensor-convolution2d", List(mA, input, output, kernels, bias, Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride))), _) =>
       emit(s"conv2d_forward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
       shallow(input)
@@ -293,11 +297,10 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(")")
     case Node(s, "mem-dims", List(Backend.Const(dims: Seq[Int])), _) =>
       emit(s"dnnl::memory::dims({${ dims.mkString(", ")} })")
-    case Node(s, "tensor-fread", List(Const(mA: Manifest[_]), data, Const(path: String), Const(dims: Seq[Int])), _) =>
-      val byteSize = s"(${dims.product} * sizeof(${remap(mA)}))"
-      emit("load_file(")
+    case Node(s, "tensor-fread", List(Const(mA: Manifest[_]), data, Const(path: String), Const(dims: Seq[Int]), Const(dtype: String)), _) =>
+      emit(s"load_bin_convert<$dtype, ${remap(mA)}>(")
       shallow(data)
-      emit(s", ${quote(path)}, $byteSize)")
+      emit(s", ${quote(path)}, ${dims.product})")
     case Node(s, "mem-desc", List(memDims, data, Const(dims: Seq[Int])), _) =>
       emit("dnnl::memory({")
       shallow(memDims)
