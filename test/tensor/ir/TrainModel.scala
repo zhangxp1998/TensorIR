@@ -3,6 +3,7 @@ package tensor.ir
 import java.io.{ByteArrayOutputStream, IOException}
 import java.nio.ByteBuffer
 import java.util
+import lms.macros.SourceContext
 
 trait TrainModel extends TensorOps {
 
@@ -64,11 +65,11 @@ trait TrainModel extends TensorOps {
       if (numRows != LoadImgAndLable.ROWS && numRows != LoadImgAndLable.COLUMNS)
         throw new IOException("Bad image. Rows and columns do not equal " + LoadImgAndLable.ROWS + "x" + LoadImgAndLable.COLUMNS)
 
-      for (i <- 0 until LoadImgAndLable.IMAGE_NUM) {
+      for (i <- 0 until LoadImgAndLable.IMAGE_NUM: Range) {
         val label = labelBytes(LoadImgAndLable.OFFSET_SIZE + LoadImgAndLable.ITEMS_SIZE + i)
         labelData(Seq(i, i)) = label
-        for (j <- 0 until LoadImgAndLable.ROWS) {
-          for (k <- 0 until LoadImgAndLable.COLUMNS) {
+        for (j <- 0 until LoadImgAndLable.ROWS: Range) {
+          for (k <- 0 until LoadImgAndLable.COLUMNS: Range) {
             imgData(Seq(i, j, k)) = imageBytes(LoadImgAndLable.IMAGE_OFFSET + i * LoadImgAndLable.IMAGE_SIZE + j + k)
           }
         }
