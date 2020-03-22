@@ -194,6 +194,23 @@ trait TensorDifferentiation extends TensorOps {
       val gradient = y.d.unsafe_apply(0)
       d.transformRange(0, d.dims.product, _ => gradient)
     }
+    def softmaxLoss(labels: Tensor[Int]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      val res = TensorR(Seq(1), 0.asInstanceOf[A])
+      val probs = x.softmax(Some(d))
+      val loss = __softmaxLoss(probs, labels)
+      res.x.unsafe_update(0, loss)
+      k(res)
+      val (rows, rowSize) = d.dims.length match {
+        case 1 => (1, d.dims.head)
+        case _ => (d.dims.head, d.dims.product/d.dims.head)
+      }
+      for (i <- DataLoop(rows)) {
+        val begin = i*rowSize
+        val gradient = d.unsafe_apply(begin + labels.unsafe_apply(i))
+        d.unsafe_update(begin + labels.unsafe_apply(i), infix_-(gradient, 1.0.asInstanceOf[A]))
+      }
+      res
+    }
   }
 }
 

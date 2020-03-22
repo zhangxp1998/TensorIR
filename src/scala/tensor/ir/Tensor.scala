@@ -42,8 +42,29 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       }
     }
   }
+  def infix_+[A: Manifest: Ordering](a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("+", Unwrap(a), Unwrap(b)))
+  def infix_-[A: Manifest: Ordering](a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("-", Unwrap(a), Unwrap(b)))
+  def infix_*[A: Manifest: Ordering](a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("*", Unwrap(a), Unwrap(b)))
+  def infix_/[A: Manifest: Ordering](a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("/", Unwrap(a), Unwrap(b)))
+  def __sqrt[A: Manifest: Ordering](a: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("sqrt", Unwrap(a)))
   def exp[T: Manifest: Ordering](x: Rep[T]): Rep[T] = {
     Wrap[T](Adapter.g.reflect("exp", Unwrap(x)))
+  }
+  def __softmaxLoss[A: Manifest: Ordering](probs: Tensor[A], labels: Tensor[Int]): Rep[A] = {
+    assert(labels.dims.length == 1, s"Label should be a 1D Tensor ${labels.dims}")
+    val (rows, rowSize) = probs.dims.length match {
+      case 1 => (1, probs.dims.head)
+      case _ => (probs.dims.head, probs.dims.product/probs.dims.head)
+    }
+    assert(labels.dims.head == rows, s"Labels should have same head dimension with data: ${rows}, ${labels.dims.head}")
+    val sum: Var[A] = var_new[A](0.asInstanceOf[A])
+    for (i <- DataLoop(rows)) {
+      val begin = i*rowSize
+      val y = probs.unsafe_apply((begin+ labels.unsafe_apply(i)))
+      __assign(sum, infix_+(readVar(sum), y))
+    }
+
+    Wrap[A](Adapter.g.reflect("/", Unwrap(readVar(sum)), Backend.Const(rows.asInstanceOf[A])))
   }
   // A trait that maps to dnnl::memory::dims. It holds the dimension of tensors at runtime
   trait MemDims {
@@ -80,11 +101,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
   class Tensor[A: Manifest: Ordering] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
     lazy val memDims: Rep[MemDims] = Tensor.createMemDims(dims)
     lazy val memDesc: Rep[MemDesc] = Tensor.createMemDesc(memDims, this)
-    def infix_+(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("+", Unwrap(a), Unwrap(b)))
-    def infix_-(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("-", Unwrap(a), Unwrap(b)))
-    def infix_*(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("*", Unwrap(a), Unwrap(b)))
-    def infix_/(a: Rep[A], b: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("/", Unwrap(a), Unwrap(b)))
-    def sqrt(a: Rep[A]): Rep[A] = Wrap[A](Adapter.g.reflect("sqrt", Unwrap(a)))
+
 
     lazy val strides = dims.scanRight(1)(_ * _).tail
     lazy val totalSize = dims.product
@@ -121,7 +138,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       Wrap[A](Adapter.g.reflectRead("tensor-apply", unwrapped_xs:_*)(Unwrap(data)))
     }
 
-    private def unsafe_update(idx: Rep[Int], newVal: Rep[A]): Unit = {
+    def unsafe_update(idx: Rep[Int], newVal: Rep[A]): Unit = {
       val mA = Backend.Const(manifest[A])
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(idx), Unwrap(newVal))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
@@ -313,7 +330,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     }
     def sqrt(): Tensor[A] = {
       val output = copy()
-      output.mapInplace(sqrt)
+      output.mapInplace(__sqrt[A])
       output
     }
     def transform(f: Rep[A] => Rep[A]): Unit = transformRange(0, totalSize, f)
@@ -356,12 +373,20 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def max(): Rep[A] = {
       Wrap[A](Adapter.g.reflectRead("tensor-max", Unwrap(data), Backend.Const(dims))(Unwrap(data)))
     }
-    def softmax(): Tensor[A] = {
+    def softmax(target: Option[Tensor[A]] = None): Tensor[A] = {
       val (rows, rowSize) = dims.length match {
         case 1 => (1, dims.head)
         case _ => (dims.head, dims.product/dims.head)
       }
-      val probs = this - max()
+      val probs = target match {
+        case Some(value) => {
+          assert(value.dims == this.dims)
+          value
+        }
+        case None => copy()
+      }
+      val m = max()
+      probs.mapInplace(a => infix_-(a, m))
       probs.mapInplace(exp)
       for (i <- DataLoop(rows)) {
         val begin = i*rowSize
@@ -371,21 +396,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       }
       probs
     }
-    def softmaxLoss(labels: Tensor[Int]) = {
-      assert(labels.dims.length == 1, s"Label should be a 1D Tensor ${labels.dims}")
-      val (rows, rowSize) = dims.length match {
-        case 1 => (1, dims.head)
-        case _ => (dims.head, dims.product/dims.head)
-      }
-      assert(labels.dims.head == rows, s"Labels should have same head dimension with data: ${rows}, ${labels.dims.head}")
+    def softmaxLoss(labels: Tensor[Int]): Rep[A] = {
       val probs = softmax()
-      val sum: Var[A] = var_new[A](0.asInstanceOf[A])
-      for (i <- DataLoop(rows)) {
-        val begin = i*rowSize
-        val y = probs.unsafe_apply((begin+ labels.unsafe_apply(i)))
-        __assign(sum, infix_+(readVar(sum), y))
-      }
-      infix_/(readVar(sum), rows.asInstanceOf[A])
+      __softmaxLoss(probs, labels)
     }
     def flatten(): Tensor[A] = {
       val mA = Backend.Const(manifest[A])
