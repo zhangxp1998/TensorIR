@@ -60,4 +60,21 @@ class TensorOpsTest extends FunSuite {
     assert(nums.length == 1)
     assert(nums.head == (1+length)*length/2)
   }
+  test("softmaxLoss") {
+    val rows = 10
+    val dslDriver = new TensorDriverC[String,Unit] {
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val x = Tensor[Float](Seq(rows, rows), AllocationType.Data)
+        x.mapInplaceWithFlatIdx(idx => idx % rows + 1)
+        val labels = Tensor[Int](Seq(rows), AllocationType.Data)
+        labels.mapInplaceWithFlatIdx(idx => idx % rows)
+        val loss = x.softmaxLoss(labels)
+        println(loss)
+      }
+    }
+    val res = dslDriver.eval("0")
+    val nums = res.map(_.toDouble)
+    assert(nums.length == 1)
+    assert(nums.head == 1.0/rows)
+  }
 }
