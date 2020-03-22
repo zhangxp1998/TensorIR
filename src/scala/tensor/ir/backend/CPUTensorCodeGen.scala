@@ -231,6 +231,8 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       shallow(end)
       emit(", ")
       shallow(data)
+      emit("+")
+      shallow(begin)
       emit(s", [&](${remap(mA)} ")
       shallow(block.in.head)
       emit(")")
@@ -276,11 +278,11 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(")")
     case Node(s, "tensor-max", List(data, Const(dims: Seq[Int])), _) =>
       val size = dims.product
-      emit(s"std::max_element(")
+      emit(s"(*std::max_element(")
       shallow(data)
       emit(", ")
       shallow(data)
-      emit(s" + $size)")
+      emit(s" + $size))")
     case Node(s, "exp", List(x), _) =>
       emit("std::exp(")
       shallow(x)
