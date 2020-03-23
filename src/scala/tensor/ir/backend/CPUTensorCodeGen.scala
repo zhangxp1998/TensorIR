@@ -303,6 +303,9 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(s"load_bin_convert<$dtype, ${remap(mA)}>(")
       shallow(data)
       emit(s", ${quote(path)}, ${dims.product})")
+    case Node(s, "tensor-mmap", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), Const(path: String)), _) =>
+      val elem_count = dims.product
+      emit(s"mmap_file<${remap(mA)}>(${quote(path)}, $elem_count)")
     case Node(s, "mem-desc", List(memDims, data, Const(dims: Seq[Int])), _) =>
       emit("dnnl::memory({")
       shallow(memDims)

@@ -93,7 +93,7 @@ object ResNet {
         class GradientDescent(val layer: Layer, val learningRate: Float) extends Optimizer {
           override def step(): Unit = layer.parameters().foreach { l =>
             l.x -= l.d * Const(learningRate)
-            println(l.x.unsafe_apply(0))
+//            println(l.x.unsafe_apply(0))
           }
         }
 
@@ -101,6 +101,8 @@ object ResNet {
         val imgSize = 28
         val input = Tensor[Float](Seq(batchSize, 1, imgSize, imgSize), AllocationType.Data)
         input.fread("train_images.bin", "uint8_t")
+        val labels = Tensor[Int](Seq(batchSize), AllocationType.Data)
+        labels.fread("train_labels.bin", "double")
         val resNet = new ResNet()
         val optimizer = new GradientDescent(resNet, 0.01)
 
@@ -113,9 +115,10 @@ object ResNet {
           })
           z.d
         }
-        grad(x => resNet.forward(x))(input)
-        optimizer.step()
-        Const(())
+        for (_ <- 0 until 10: Rep[Range]) {
+          grad(x => resNet.forward(x).softmaxLoss(labels))(input)
+          optimizer.step()
+        }
       }
     }
 

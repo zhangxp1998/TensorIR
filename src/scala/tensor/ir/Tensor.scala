@@ -76,6 +76,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       new Tensor(xs, allocType)
     }
+    def mmap[A: Manifest: Ordering](dims: Seq[Int], path: String): Tensor[A] = {
+      val mA = Backend.Const(manifest[A])
+      val data = Wrap[Array[A]](Adapter.g.reflectRead("tensor-mmap", mA, Backend.Const(dims), Backend.Const(path))(Adapter.CTRL))
+      new Tensor[A](dims, data, AllocationType.Data)
+    }
     def fill[A: Manifest: Ordering](dims: Seq[Int], fillVal: A, allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       val tensor = Tensor[A](dims, allocType)
       val mA = Backend.Const(manifest[A])
@@ -379,10 +384,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         case _ => (dims.head, dims.product/dims.head)
       }
       val probs = target match {
-        case Some(value) => {
+        case Some(value) =>
           assert(value.dims == this.dims)
           value
-        }
         case None => copy()
       }
       val m = max()
@@ -439,7 +443,6 @@ abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] 
   override val codegen = new CPUTensorCodeGen {
     override val IR: q.type = q
   }
-  lazy val g: Graph = Adapter.program(Adapter.g.reify(x => Unwrap(wrapper(Wrap[A](x)))))
 }
 
 object Runer {
