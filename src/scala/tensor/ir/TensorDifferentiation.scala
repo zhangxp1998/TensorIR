@@ -180,7 +180,7 @@ trait TensorDifferentiation extends TensorOps {
       )(
         Seq(x, y.d, avg, variance, gamma_beta.x).map(a => Unwrap(a.data)): _*
       )(
-        Unwrap(d, gamma_beta.d.data)
+        Unwrap(d.data), Unwrap(gamma_beta.d.data)
       )
     }
     def flatten(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
