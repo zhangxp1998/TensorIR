@@ -42,7 +42,7 @@ object StagedMemoryAllocator {
           list += remain
         }
         mem_used += size
-        assert(mem_used + freelist.values.flatMap(_.map(_.size)).sum == maxsize)
+        assert(mem_used + freeMem == maxsize)
         min_mem = Math.max(mem_used, min_mem)
 
       case Deallocation(id, size, afterSym) =>
