@@ -151,7 +151,7 @@ void mmap_file(const char *path, size_t size) {
         abort();
     }
 
-    void *p = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
+    void *p = mmap(NULL, size*sizeof(DataType), PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
     if (p == MAP_FAILED) {
         perror("mmap() failed");
         abort();
