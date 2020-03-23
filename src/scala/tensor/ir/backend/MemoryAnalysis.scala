@@ -28,7 +28,6 @@ class MemoryPlanningTraverser extends Traverser {
     time+=1
     time
   }
-
   override def apply(g: Graph): Unit = {
     @scala.annotation.tailrec
     def getSrc(s: Sym): Sym = reusedSyms.get(s) match {
@@ -90,5 +89,6 @@ class MemoryPlanningTraverser extends Traverser {
           case _ =>
         }
     }
+    super.traverse(n)
   }
 }
