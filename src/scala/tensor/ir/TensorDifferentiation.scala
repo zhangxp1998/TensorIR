@@ -154,8 +154,6 @@ trait TensorDifferentiation extends TensorOps {
       val outputSize = x.getConv2dOutputSize(ic, oc, kh, padding, stride)
       val y = new TensorR(x.conv2d(that.x, bias.x, padding, stride), Tensor.zero[A](outputSize, AllocationType.Intermediate))
       k(y)
-      val gradients = Unwrap(that.d.data)
-      val kernels = Unwrap(that.x.data)
       Adapter.g.reflectEffect(
         "conv2d-backprop", Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, x, that.d, bias.d).map(a => Unwrap(a.memDesc)): _*
       )(
@@ -167,7 +165,8 @@ trait TensorDifferentiation extends TensorOps {
     def relu(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val y = new TensorR(x.relu(), d.copy())
       k(y)
-      d.mapInplaceWithFlatIdx(i => __ifThenElse(x.unsafe_apply(i) <= 0.asInstanceOf[A], 0.asInstanceOf[A], 1.asInstanceOf[A]))
+      val zero = 0.asInstanceOf[A]
+      d.mapInplaceWithFlatIdx(i => __ifThenElse(x.unsafe_apply(i) <= zero, zero, y.d.unsafe_apply(i)))
     }
 
     def batchNorm(gamma_beta: TensorR[A], recomp: Boolean = false): TensorR[A]@diff = shift {k: (TensorR[A] => Unit) =>
@@ -192,7 +191,7 @@ trait TensorDifferentiation extends TensorOps {
       val y = new TensorR(x.sumT(), Tensor.zero[A](Seq(1), AllocationType.Gradient))
       k(y)
       val gradient = y.d.unsafe_apply(0)
-      d.transformRange(0, d.dims.product, _ => gradient)
+      d.transform(_ => gradient)
     }
     def softmaxLoss(labels: Tensor[Int]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val res = TensorR(Seq(1), 0.asInstanceOf[A])
@@ -204,12 +203,13 @@ trait TensorDifferentiation extends TensorOps {
         case 1 => (1, d.dims.head)
         case _ => (d.dims.head, d.dims.product/d.dims.head)
       }
+      val d_dst = res.d.unsafe_apply(0)
       for (i <- DataLoop(rows)) {
         val begin = i*rowSize
         val gradient = d.unsafe_apply(begin + labels.unsafe_apply(i))
         d.unsafe_update(begin + labels.unsafe_apply(i), infix_-(gradient, 1.0.asInstanceOf[A]))
       }
-      res
+      d.transform(a => infix_*(a, d_dst))
     }
   }
 }
