@@ -139,7 +139,8 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
   override def shallow(node: Node): Unit = node match {
     case Node(s, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Const(allocType)::Nil, eff) =>
       emit(s"((${remap(manifest)}*)malloc(${dims.product} * sizeof(${remap(manifest)})))")
-    case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::src, eff) =>
+    case Node(s, "heap-offset", Const(manifest: Manifest[_])::Const(blk: MemoryBlock)::src, _) =>
+      emit(s"/*${blk.toString}*/")
       if (src.isEmpty)
         emit(s"((${remap(manifest)}*)(heap+${blk.begin}))")
       else
@@ -197,11 +198,11 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       }
       emit(s"dnnl_sgemm('N', 'N', $m, $n, $k, 1, ")
       shallow(lhs)
-      emit(s", $m, ")
+      emit(s", $k, ")
       shallow(rhs)
-      emit(s", $k, 0, ")
+      emit(s", $n, 0, ")
       shallow(result)
-      emit(s", $m)")
+      emit(s", $n)")
 
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""")
@@ -276,13 +277,16 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(", ")
       shallow(rhs)
       emit(")")
-    case Node(s, "tensor-max", List(data, Const(dims: Seq[Int])), _) =>
-      val size = dims.product
+    case Node(s, "tensor-max", List(data, begin, end), _) =>
       emit(s"(*std::max_element(")
       shallow(data)
-      emit(", ")
+      emit(s"+")
+      shallow(begin)
+      emit(",")
       shallow(data)
-      emit(s" + $size))")
+      emit("+")
+      shallow(end)
+      emit("))")
     case Node(s, "exp", List(x), _) =>
       emit("std::exp(")
       shallow(x)
@@ -317,6 +321,15 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       }
       emit(s", dnnl::memory::data_type::f32, dnnl::memory::format_tag::$format}, eng, ")
       shallow(data)
+      emit(")")
+    case Node(s, "tensor-data-copy", List(mA, src, dst, Const(dims: Seq[Int])), _) =>
+      val elemCount = dims.product
+      emit("std::copy(")
+      shallow(src)
+      emit(", ")
+      shallow(src)
+      emit(s"+$elemCount, ")
+      shallow(dst)
       emit(")")
     case _ => super.shallow(node)
   }
