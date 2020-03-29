@@ -182,15 +182,22 @@ trait TensorDifferentiation extends TensorOps {
         Unwrap(d.data), Unwrap(gamma_beta.d.data)
       )
     }
-    def flatten(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
-      val y = new TensorR(x.flatten(), Tensor.zero[A](d.dims, AllocationType.Gradient))
+    def flatten(): TensorR[A]@diff = reshape(Seq(d.dims.product))
+    def reshape(newDims: Seq[Int]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x.reshape(newDims), Tensor.zero[A](newDims, AllocationType.Gradient))
       k(y)
-      d = y.d
+      Tensor.copy[A](y.d, d)
     }
     def sum(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val y = new TensorR(x.sumT(), Tensor.zero[A](Seq(1), AllocationType.Gradient))
       k(y)
       val gradient = y.d.unsafe_apply(0)
+      d.transform(_ => gradient)
+    }
+    def avg(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+      val y = new TensorR(x.avgT(), Tensor.zero[A](Seq(1), AllocationType.Gradient))
+      k(y)
+      val gradient = infix_/(y.d.unsafe_apply(0), d.dims.product.asInstanceOf[A])
       d.transform(_ => gradient)
     }
     def softmaxLoss(labels: Tensor[Int]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
