@@ -102,6 +102,17 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def createMemDesc[A: Manifest: Ordering](memDims: Rep[MemDims], tensor: Tensor[A]): Rep[MemDesc] = {
       Wrap[MemDesc](Adapter.g.reflect("mem-desc", Unwrap(memDims), Unwrap(tensor.data), Backend.Const(tensor.dims)))
     }
+    def copy[A: Manifest](src: Tensor[A], dst: Tensor[A]): Unit = {
+      assert(src.dims.product == dst.dims.product, s"Number of elements must match! ${src.dims}, ${dst.dims}")
+      val mA = Backend.Const(manifest[A])
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-data-copy", mA, Unwrap(src.data), Unwrap(dst.data), Backend.Const(src.dims)
+      )(
+        Unwrap(src.data)
+      )(
+        Unwrap(dst.data)
+      ))
+    }
   }
   class Tensor[A: Manifest: Ordering] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
     lazy val memDims: Rep[MemDims] = Tensor.createMemDims(dims)
@@ -375,8 +386,14 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       res.unsafe_update(0, sumVal)
       res
     }
-    def max(): Rep[A] = {
-      Wrap[A](Adapter.g.reflectRead("tensor-max", Unwrap(data), Backend.Const(dims))(Unwrap(data)))
+    def avgT(): Tensor[A] = {
+      val res = Tensor[A](Seq(1), AllocationType.Intermediate)
+      val sumVal = sum()
+      res.unsafe_update(0, infix_/(sumVal, dims.product.asInstanceOf[A]))
+      res
+    }
+    def max(begin: Rep[Int] = 0, end: Rep[Int] = dims.product): Rep[A] = {
+      Wrap[A](Adapter.g.reflectRead("tensor-max", Unwrap(data), Unwrap(begin), Unwrap(end))(Unwrap(data)))
     }
     def softmax(target: Option[Tensor[A]] = None): Tensor[A] = {
       val (rows, rowSize) = dims.length match {
@@ -386,15 +403,16 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val probs = target match {
         case Some(value) =>
           assert(value.dims == this.dims)
+          Tensor.copy[A](this, value)
           value
         case None => copy()
       }
-      val m = max()
-      probs.mapInplace(a => infix_-(a, m))
-      probs.mapInplace(exp)
       for (i <- DataLoop(rows)) {
         val begin = i*rowSize
         val end = begin + rowSize
+        val m = probs.max(begin, end)
+        probs.transformRange(begin, end, a => infix_-(a, m))
+        probs.transformRange(begin, end, exp)
         val sum = probs.accumulateRange(begin, end)
         probs.transformRange(begin, end, a => infix_/(a, sum))
       }
@@ -405,10 +423,15 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       __softmaxLoss(probs, labels)
     }
     def flatten(): Tensor[A] = {
+      reshape(Seq(dims.product))
+    }
+
+    def reshape(newDims: Seq[Int]): Tensor[A] = {
+      assert(dims.product == newDims.product, s"Number of elements must be preserved $dims, ${newDims}")
       val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims))
+      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(dims), Backend.Const(AllocationType.Intermediate))
       new Tensor(
-        Seq(totalSize),
+        newDims,
         Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE)),
         allocType
       )
