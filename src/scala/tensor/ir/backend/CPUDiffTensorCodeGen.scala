@@ -6,13 +6,13 @@ import lms.core.Backend.{Const, Node}
 trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
   registerHeader("\"tensor_diff.h\"")
   override def shallow(n: Node): Unit = n match {
-    case Node(s, "matmul-backprop", List(m1, m2, y, d1, d2, Backend.Const(Seq(m: Int, k: Int, n: Int))), _) =>
+    case Node(s, "matmul-backprop", List(m1, m2, diff_dst, d1, d2, Backend.Const(Seq(m: Int, k: Int, n: Int))), _) =>
       emit("matmul_backprop(")
       shallow(m1)
       emit(", ")
       shallow(m2)
       emit(", ")
-      shallow(y)
+      shallow(diff_dst)
       emit(", ")
       shallow(d1)
       emit(", ")

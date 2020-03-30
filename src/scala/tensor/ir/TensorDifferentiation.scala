@@ -71,12 +71,12 @@ trait TensorDifferentiation extends TensorOps {
       k(y)
       val m1: Tensor[A] = x
       val m2: Tensor[A] = that.x
-      val output: Tensor[A] = y.x
+      val diff_dst: Tensor[A] = y.d
 
       Adapter.g.reflectEffect(
-        "matmul-backprop", Unwrap(m1.data), Unwrap(m2.data), Unwrap(output.data), Unwrap(d.data), Unwrap(that.d.data), Backend.Const(Seq(M, K, N))
+        "matmul-backprop", Unwrap(m1.data), Unwrap(m2.data), Unwrap(diff_dst.data), Unwrap(d.data), Unwrap(that.d.data), Backend.Const(Seq(M, K, N))
       )(
-        Unwrap(m1.data), Unwrap(m2.data), Unwrap(output.data)
+        Unwrap(m1.data), Unwrap(m2.data), Unwrap(diff_dst.data)
       )(
         Unwrap(d.data), Unwrap(that.d.data)
       )
