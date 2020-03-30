@@ -1,7 +1,7 @@
 #ifndef __TENSOR_DIFF_H
 #define __TENSOR_DIFF_H
-#include <dnnl.hpp>
 #include "tensor.h"
+#include <dnnl.hpp>
 void matmul_backprop(const float *m1, const float *m2, const float *y,
                      float *d1, float *d2, const size_t M, const size_t K,
                      const size_t N) {
@@ -29,10 +29,11 @@ get_batchnorm_backward_prim_desc(const dnnl::engine &eng) {
 
 template <size_t N, size_t C, size_t H, size_t W>
 void batchnorm_backward(const dnnl::engine &eng, dnnl::stream &stream,
-                               const dnnl::memory &src, const dnnl::memory &diff_src,
-                               const dnnl::memory &diff_dst, const dnnl::memory &avg,
-                               const dnnl::memory &variance, const dnnl::memory &gamma_beta,
-                               const dnnl::memory &diff_gamma_beta) {
+                        const dnnl::memory &src, const dnnl::memory &diff_src,
+                        const dnnl::memory &diff_dst, const dnnl::memory &avg,
+                        const dnnl::memory &variance,
+                        const dnnl::memory &gamma_beta,
+                        const dnnl::memory &diff_gamma_beta) {
   using namespace dnnl;
   static batch_normalization_backward::primitive_desc prim_desc =
       get_batchnorm_backward_prim_desc<N, C, H, W>(eng);
@@ -80,9 +81,9 @@ get_convolution_backward_prim_desc(const dnnl::engine &eng) {
 template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
           size_t padding, size_t stride>
 void convolution_backward(const dnnl::engine &eng, dnnl::stream &stream,
-                                 const dnnl::memory &diff_dst, const dnnl::memory &src,
-                                 const dnnl::memory &diff_weights,
-                                 const dnnl::memory &diff_bias) {
+                          const dnnl::memory &diff_dst, const dnnl::memory &src,
+                          const dnnl::memory &diff_weights,
+                          const dnnl::memory &diff_bias) {
   using namespace dnnl;
   static convolution_backward_weights::primitive_desc prim_desc =
       get_convolution_backward_prim_desc<N, C, H, W, OC, KernelSize, padding,
@@ -98,19 +99,22 @@ void convolution_backward(const dnnl::engine &eng, dnnl::stream &stream,
                         {DNNL_ARG_DIFF_WEIGHTS, diff_weights}});
 }
 
-template
-<size_t N, size_t IC>
-dnnl::logsoftmax_backward::primitive_desc get_logsoftmax_backward_prim_desc(const dnnl::engine& engine) {
+template <size_t N, size_t IC>
+dnnl::logsoftmax_backward::primitive_desc
+get_logsoftmax_backward_prim_desc(const dnnl::engine &engine) {
   using namespace dnnl;
   memory::dims src_dims = {N, IC};
-  auto src_md = memory::desc(src_dims, memory::data_type::f32, memory::format_tag::ab);
+  auto src_md =
+      memory::desc(src_dims, memory::data_type::f32, memory::format_tag::ab);
   auto desc = logsoftmax_backward::desc(src_md, src_md, 1);
-  return logsoftmax_backward::primitive_desc(desc, engine, get_logsoftmax_forward_prim_desc<N, IC>(engine));
+  return logsoftmax_backward::primitive_desc(
+      desc, engine, get_logsoftmax_forward_prim_desc<N, IC>(engine));
 }
 
-template
-<size_t N, size_t IC>
-void logsoftmax_backward(const dnnl::engine& engine, dnnl::stream& stream, const dnnl::memory& diff_dst, const dnnl::memory& dst, const dnnl::memory& diff_src) {
+template <size_t N, size_t IC>
+void logsoftmax_backward(const dnnl::engine &engine, dnnl::stream &stream,
+                         const dnnl::memory &diff_dst, const dnnl::memory &dst,
+                         const dnnl::memory &diff_src) {
   using namespace dnnl;
   static auto prim_desc = get_logsoftmax_backward_prim_desc<N, IC>(engine);
   static auto logsoftmax = dnnl::logsoftmax_backward(prim_desc);
@@ -118,10 +122,10 @@ void logsoftmax_backward(const dnnl::engine& engine, dnnl::stream& stream, const
   assert(prim_desc.diff_dst_desc() == diff_dst.get_desc());
   assert(prim_desc.diff_src_desc() == diff_src.get_desc());
   logsoftmax.execute(stream, {
-    {DNNL_ARG_DIFF_DST, diff_dst},
-    {DNNL_ARG_DST, dst},
-    {DNNL_ARG_DIFF_SRC, diff_src},
-  });
+                                 {DNNL_ARG_DIFF_DST, diff_dst},
+                                 {DNNL_ARG_DST, dst},
+                                 {DNNL_ARG_DIFF_SRC, diff_src},
+                             });
 }
 
 #endif
