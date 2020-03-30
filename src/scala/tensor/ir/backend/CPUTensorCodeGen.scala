@@ -196,13 +196,13 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       if (mA.toString != "Float") {
         throw new RuntimeException(s"Only floating point values are supported: ${mA.toString}")
       }
-      emit(s"dnnl_sgemm('N', 'N', $m, $n, $k, 1, ")
+      emit(s"sgemm('N', 'N', ")
       shallow(lhs)
-      emit(s", $k, ")
+      emit(", ")
       shallow(rhs)
-      emit(s", $n, 0, ")
+      emit(", ")
       shallow(result)
-      emit(s", $n)")
+      emit(s", $m, $k, $n, 1.0f, 0.0f)")
 
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""")
@@ -341,7 +341,24 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(s"+$elemCount, ")
       shallow(dst)
       emit(")")
+    case Node(s, "tensor-fill", List(mA, data, fillVal, Const(dims: Seq[Int])), _) =>
+      emit("std::fill(")
+      emitBeginEnd(data, Const(0), Const(dims.product))
+      emit(", ")
+      shallow(fillVal)
+      emit(")")
     case _ => super.shallow(node)
+  }
+  def emitBeginEnd(data: Def, begin: Def, end: Def): Unit = {
+    shallow(data)
+    if (begin != Const(0)) {
+      emit("+")
+      shallow(begin)
+    }
+    emit(", ")
+    shallow(data)
+    emit("+")
+    shallow(end)
   }
   def quote(s: String): String = {
     "\"" + s.replaceAllLiterally("\\", "\\\\") + "\""

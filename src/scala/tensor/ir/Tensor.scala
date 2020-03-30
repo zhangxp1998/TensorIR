@@ -63,7 +63,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     val sum: Var[A] = var_new[A](0.asInstanceOf[A])
     for (i <- DataLoop(rows)) {
       val begin = i*rowSize
-      val y = probs.unsafe_apply((begin+ labels.unsafe_apply(i)))
+      val y = probs.unsafe_apply((begin + labels.unsafe_apply(i)))
       __assign(sum, infix_-(readVar(sum), y))
     }
 
@@ -143,6 +143,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     }
     def update(idx: Seq[Int], newVal: A): Unit = {
       update(idx, Const(newVal))
+    }
+
+    def fill(fillVal: Rep[A]): Unit = {
+      val mA = Backend.Const(manifest[A])
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", mA, Unwrap(data), Unwrap(fillVal), Backend.Const(dims))(Unwrap(data)))
     }
 
     def update(idx: Seq[Int], newVal: Rep[A]): Unit = {

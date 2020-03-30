@@ -12,6 +12,9 @@ object ResNet {
         trait Layer extends Diff {
           def forward(x: TensorR[Float]): TensorR[Float]@diff
           def parameters(): Seq[TensorR[Float]]
+          def zero_grad(): Unit = {
+            parameters().foreach(u => u.d.fill(0))
+          }
         }
         class Conv2D(val inChannels: Int, val outChannels: Int, val kernelSize: Int, val stride: Int, val padding: Int) extends Layer {
           val kernels: TensorR[Float] =
@@ -122,14 +125,15 @@ object ResNet {
           val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
           reset({
             val res = f(z)
-            res.d.transform(_ => 1.0f)
+            res.d.fill(1.0f)
             println(res.x.unsafe_apply(0))
           })
           z.d
         }
         for (_ <- 0 until 10: Rep[Range]) {
           println("===========Iteration Begin===========")
-          grad(x => resNet.forward(x).softmaxLoss(labels).avg())(input)
+          resNet.zero_grad()
+          grad(x => resNet.forward(x).softmaxLoss(labels))(input)
           optimizer.step()
         }
       }
