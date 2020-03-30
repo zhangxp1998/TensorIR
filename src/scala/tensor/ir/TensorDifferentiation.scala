@@ -206,7 +206,7 @@ trait TensorDifferentiation extends TensorOps {
       val loss = __softmaxLoss(probs, labels)
       res.x.unsafe_update(0, loss)
       k(res)
-      val diff_dst = Tensor.fill[A](d.dims, 1.asInstanceOf[A], AllocationType.Gradient)
+      val diff_dst = Tensor.fill[A](d.dims, 0.asInstanceOf[A], AllocationType.Gradient)
       val (rows, rowSize) = d.dims.length match {
         case 1 => (1, d.dims.head)
         case _ => (d.dims.head, d.dims.product/d.dims.head)
