@@ -97,4 +97,31 @@ void convolution_backward(const dnnl::engine &eng, dnnl::stream &stream,
                         {DNNL_ARG_DIFF_BIAS, diff_bias},
                         {DNNL_ARG_DIFF_WEIGHTS, diff_weights}});
 }
+
+template
+<size_t N, size_t IC>
+dnnl::logsoftmax_backward::primitive_desc get_logsoftmax_backward_prim_desc(const dnnl::engine& engine) {
+  using namespace dnnl;
+  memory::dims src_dims = {N, IC};
+  auto src_md = memory::desc(src_dims, memory::data_type::f32, memory::format_tag::ab);
+  auto desc = logsoftmax_backward::desc(src_md, src_md, 1);
+  return logsoftmax_backward::primitive_desc(desc, engine, get_logsoftmax_forward_prim_desc<N, IC>(engine));
+}
+
+template
+<size_t N, size_t IC>
+void logsoftmax_backward(const dnnl::engine& engine, dnnl::stream& stream, const dnnl::memory& diff_dst, const dnnl::memory& dst, const dnnl::memory& diff_src) {
+  using namespace dnnl;
+  static auto prim_desc = get_logsoftmax_backward_prim_desc<N, IC>(engine);
+  static auto logsoftmax = dnnl::logsoftmax_backward(prim_desc);
+  assert(prim_desc.dst_desc() == dst.get_desc());
+  assert(prim_desc.diff_dst_desc() == diff_dst.get_desc());
+  assert(prim_desc.diff_src_desc() == diff_src.get_desc());
+  logsoftmax.execute(stream, {
+    {DNNL_ARG_DIFF_DST, diff_dst},
+    {DNNL_ARG_DST, dst},
+    {DNNL_ARG_DIFF_SRC, diff_src},
+  });
+}
+
 #endif

@@ -52,6 +52,15 @@ object ResNet {
           override def parameters(): Seq[TensorR[Float]] = params
         }
 
+        class Flatten extends Layer {
+          override def forward(x: TensorR[Float]): TensorR[Float]@diff = {
+            val N = x.d.dims.head
+            x.reshape(Seq(N, x.d.dims.product/N))
+          }
+
+          override def parameters(): Seq[TensorR[Float]] = Seq()
+        }
+
         class ResidualBlock(val inChannels: Int, val outChannels: Int, val stride: Int = 1) extends Layer {
           val left = new Sequential(
             new Conv2D(inChannels, outChannels, 3, stride, 1),
@@ -80,7 +89,10 @@ object ResNet {
             new Conv2D(1, 3, 3, 1, 1),
             new BatchNorm(3),
             new ReLU(),
-            new ResidualBlock(3, 8, 2),
+            new Conv2D(3, 8, 3, 2, 1),
+            new Flatten(),
+            new FCLayer(1568, 10),
+//            new ResidualBlock(3, 8, 2),
           )
 
           override def forward(x: TensorR[Float]): TensorR[Float]@diff = layer.forward(x)
@@ -104,7 +116,7 @@ object ResNet {
         val labels = Tensor[Int](Seq(batchSize), AllocationType.Data)
         labels.fread("train_labels.bin", "double")
         val resNet = new ResNet()
-        val optimizer = new GradientDescent(resNet, 0.01)
+        val optimizer = new GradientDescent(resNet, 0.0001)
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]) = {
           val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
@@ -116,7 +128,8 @@ object ResNet {
           z.d
         }
         for (_ <- 0 until 10: Rep[Range]) {
-          grad(x => resNet.forward(x).softmaxLoss(labels))(input)
+          println("===========Iteration Begin===========")
+          grad(x => resNet.forward(x).softmaxLoss(labels).avg())(input)
           optimizer.step()
         }
       }

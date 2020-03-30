@@ -48,6 +48,14 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emit(", ")
       shallow(diff_bias)
       emit(")")
+    case Node(s, "logsoftmax-backward", List(diff_dst, dst, diff_src, Const((rows: Int, rowSize: Int))), _) =>
+      emit(s"logsoftmax_backward<$rows, $rowSize>(eng, stream, ")
+      shallow(diff_dst)
+      emit(", ")
+      shallow(dst)
+      emit(", ")
+      shallow(diff_src)
+      emit(")")
     case _ => super.shallow(n)
   }
   def emitStubComment(op: String): Unit = emit(s"/*Stub for ${op}*/")

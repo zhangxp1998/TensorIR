@@ -50,6 +50,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
   def exp[T: Manifest: Ordering](x: Rep[T]): Rep[T] = {
     Wrap[T](Adapter.g.reflect("exp", Unwrap(x)))
   }
+  def log[T: Manifest](x: Rep[T]): Rep[T] = {
+    Wrap[T](Adapter.g.reflect("log", Unwrap(x)))
+  }
   def __softmaxLoss[A: Manifest: Ordering](probs: Tensor[A], labels: Tensor[Int]): Rep[A] = {
     assert(labels.dims.length == 1, s"Label should be a 1D Tensor ${labels.dims}")
     val (rows, rowSize) = probs.dims.length match {
@@ -61,7 +64,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     for (i <- DataLoop(rows)) {
       val begin = i*rowSize
       val y = probs.unsafe_apply((begin+ labels.unsafe_apply(i)))
-      __assign(sum, infix_+(readVar(sum), y))
+      __assign(sum, infix_-(readVar(sum), y))
     }
 
     Wrap[A](Adapter.g.reflect("/", Unwrap(readVar(sum)), Backend.Const(rows.asInstanceOf[A])))
@@ -395,31 +398,30 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def max(begin: Rep[Int] = 0, end: Rep[Int] = dims.product): Rep[A] = {
       Wrap[A](Adapter.g.reflectRead("tensor-max", Unwrap(data), Unwrap(begin), Unwrap(end))(Unwrap(data)))
     }
-    def softmax(target: Option[Tensor[A]] = None): Tensor[A] = {
+    def logsoftmax(target: Option[Tensor[A]] = None): Tensor[A] = {
+      assert(dims.length == 2, "softmax currently only supports 2D tensors")
+      assert(manifest[A].toString() == "Float", "softmax currently only supports floating point values")
       val (rows, rowSize) = dims.length match {
         case 1 => (1, dims.head)
         case _ => (dims.head, dims.product/dims.head)
       }
       val probs = target match {
         case Some(value) =>
-          assert(value.dims == this.dims)
-          Tensor.copy[A](this, value)
+          assert(value.dims.product == dims.product && value.dims.head == dims.head)
           value
         case None => copy()
       }
-      for (i <- DataLoop(rows)) {
-        val begin = i*rowSize
-        val end = begin + rowSize
-        val m = probs.max(begin, end)
-        probs.transformRange(begin, end, a => infix_-(a, m))
-        probs.transformRange(begin, end, exp)
-        val sum = probs.accumulateRange(begin, end)
-        probs.transformRange(begin, end, a => infix_/(a, sum))
-      }
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "logsoftmax-forward", Unwrap(memDesc), Unwrap(probs.memDesc), Backend.Const((rows, rowSize))
+      )(
+        Unwrap(data)
+      )(
+        Unwrap(probs)
+      ))
       probs
     }
     def softmaxLoss(labels: Tensor[Int]): Rep[A] = {
-      val probs = softmax()
+      val probs = logsoftmax()
       __softmaxLoss(probs, labels)
     }
     def flatten(): Tensor[A] = {

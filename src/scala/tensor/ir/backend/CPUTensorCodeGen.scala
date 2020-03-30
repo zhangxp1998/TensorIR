@@ -257,6 +257,12 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
     case Node(s, "tensor-convolution", List(mA, data, kernel, output, Const(dims: Seq[Int]), Const(kernelDims: Seq[Int])), _) =>
       // TODO implement convolution, this is just a stub
       emit("/*Stub for tensor convolution TODO implement this*/")
+    case Node(s, "logsoftmax-forward", List(src, dst, Const((rows, rowSize))), _) =>
+      emit(s"logsoftmax_forward<$rows, $rowSize>(eng, stream, ")
+      shallow(src)
+      emit(", ")
+      shallow(dst)
+      emit(")")
     case Node(s, "batchnorm-forward", List(Const(dims: Seq[Int]), Const(epsilon: Float), src, avg, variance, gamma_beta, dst), _) =>
       // TODO support custom epsilon
       val Seq(n, c, h, w) = dims
@@ -289,6 +295,10 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit("))")
     case Node(s, "exp", List(x), _) =>
       emit("std::exp(")
+      shallow(x)
+      emit(")")
+    case Node(s, "log", List(x), _) =>
+      emit("std::log(")
       shallow(x)
       emit(")")
     case Node(s, "tensor-convolution2d", List(mA, input, output, kernels, bias, Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride))), _) =>

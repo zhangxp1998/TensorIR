@@ -111,6 +111,33 @@ void batchnorm_forward(const dnnl::engine &eng, dnnl::stream &stream,
                              {DNNL_ARG_DST, dst}});
 }
 
+template <size_t N, size_t IC>
+dnnl::logsoftmax_forward::primitive_desc get_logsoftmax_forward_prim_desc(const dnnl::engine& engine) {
+  using namespace dnnl;
+  memory::dims src_dims = {N, IC};
+  auto src_md = memory::desc(src_dims, memory::data_type::f32, memory::format_tag::ab);
+  const int axis = 1;
+  auto logsoftmax_d = dnnl::logsoftmax_forward::desc(
+          prop_kind::forward_training, src_md, axis);
+  auto logsoftmax_pd
+          = logsoftmax_forward::primitive_desc(logsoftmax_d, engine);
+  return logsoftmax_pd;
+}
+
+template <size_t N, size_t IC>
+void logsoftmax_forward(const dnnl::engine& engine, dnnl::stream& stream, const dnnl::memory& src, const dnnl::memory& dst) {
+  using namespace dnnl;
+  static auto prim_desc
+          = get_logsoftmax_forward_prim_desc<N, IC>(engine);
+  static auto logsoftmax = dnnl::logsoftmax_forward(prim_desc);
+  assert(src.get_desc() == prim_desc.src_desc());
+  assert(dst.get_desc() == prim_desc.dst_desc());
+  logsoftmax.execute(stream, {
+    {DNNL_ARG_SRC, src},
+    {DNNL_ARG_DST, dst},
+  });
+}
+
 template <typename FileType, typename DataType>
 void load_bin_convert(DataType* data, const char *path, size_t elem_count) {
     int err = 0;
@@ -144,7 +171,6 @@ void load_bin_convert(DataType* data, const char *path, size_t elem_count) {
 
 template <typename DataType>
 void mmap_file(const char *path, size_t size) {
-    int err = 0;
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
         perror("open() failed!");

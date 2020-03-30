@@ -202,21 +202,28 @@ trait TensorDifferentiation extends TensorOps {
     }
     def softmaxLoss(labels: Tensor[Int]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val res = TensorR(Seq(1), 0.asInstanceOf[A])
-      val probs = x.softmax(Some(d))
+      val probs = x.logsoftmax(Some(d))
       val loss = __softmaxLoss(probs, labels)
       res.x.unsafe_update(0, loss)
       k(res)
+      val diff_dst = Tensor.fill[A](d.dims, 1.asInstanceOf[A], AllocationType.Gradient)
       val (rows, rowSize) = d.dims.length match {
         case 1 => (1, d.dims.head)
         case _ => (d.dims.head, d.dims.product/d.dims.head)
       }
-      val d_dst = res.d.unsafe_apply(0)
-      for (i <- DataLoop(rows)) {
-        val begin = i*rowSize
-        val gradient = d.unsafe_apply(begin + labels.unsafe_apply(i))
-        d.unsafe_update(begin + labels.unsafe_apply(i), infix_-(gradient, 1.0.asInstanceOf[A]))
+      for (i <- 0 until rows: Rep[Range]) {
+        val idx = i * rowSize + labels.unsafe_apply(i)
+        diff_dst.unsafe_update(idx, (-1).asInstanceOf[A])
       }
+      val d_dst = res.d.unsafe_apply(0)
       d.transform(a => infix_*(a, d_dst))
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "logsoftmax-backward", Seq(diff_dst, probs, d).map(a => Unwrap(a.memDesc)) :+ Backend.Const((rows, rowSize)): _*
+      )(
+        Unwrap(diff_dst.data), Unwrap(probs.data)
+      )(
+        Unwrap(d.data)
+      ))
     }
   }
 }
