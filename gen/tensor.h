@@ -184,4 +184,8 @@ template <typename DataType> void mmap_file(const char *path, size_t size) {
   }
   return static_cast<DataType *>(p);
 }
+
+void sgemm(const char transA, const char transB, const float *a, const float *b,
+           float *c, const size_t M, const size_t K, const size_t N,
+           float alpha, float beta);
 #endif

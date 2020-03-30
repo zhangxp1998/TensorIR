@@ -2,15 +2,11 @@
 #define __TENSOR_DIFF_H
 #include "tensor.h"
 #include <dnnl.hpp>
+
 void matmul_backprop(const float *m1, const float *m2, const float *y,
                      float *d1, float *d2, const size_t M, const size_t K,
-                     const size_t N) {
-  // m1: M*K, m2: K*N, y: M*N
-  // d1 += y * m2.T => M*N x N*K = M*K
-  // d2 += m1.T * y => K*M x M*N = K*N
-  dnnl_sgemm('N', 'T', M, N, K, 1.0f, y, M, m2, K, 1.0f, d1, M);
-  dnnl_sgemm('T', 'N', K, M, N, 1.0f, m1, M, y, M, 1.0f, d2, M);
-}
+                     const size_t N);
+
 template <size_t N, size_t C, size_t H, size_t W>
 dnnl::batch_normalization_backward::primitive_desc
 get_batchnorm_backward_prim_desc(const dnnl::engine &eng) {
