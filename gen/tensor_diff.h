@@ -46,7 +46,7 @@ void batchnorm_backward(const dnnl::engine &eng, dnnl::stream &stream,
 }
 template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
           size_t padding, size_t stride>
-inline dnnl::convolution_backward_weights::primitive_desc
+dnnl::convolution_backward_weights::primitive_desc
 get_convolution_backward_prim_desc(const dnnl::engine &eng) {
   using namespace dnnl;
   memory::dims src_dims = {N, C, H, W};
@@ -93,6 +93,45 @@ void convolution_backward(const dnnl::engine &eng, dnnl::stream &stream,
                         {DNNL_ARG_DIFF_DST, diff_dst},
                         {DNNL_ARG_DIFF_BIAS, diff_bias},
                         {DNNL_ARG_DIFF_WEIGHTS, diff_weights}});
+}
+
+template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
+size_t padding, size_t stride>
+dnnl::convolution_backward_data::primitive_desc get_convolution_backward_data_prim_desc(const dnnl::engine& eng) {
+  using namespace dnnl;
+  memory::dims conv2_src_tz = {N, C, H, W};
+  memory::dims conv2_weights_tz = {OC, C, KernelSize, KernelSize};
+  memory::dims conv2_dst_tz = {
+      N, OC,
+      static_cast<long long>((H + 2 * padding - KernelSize + 1) / stride),
+      static_cast<long long>((W + 2 * padding - KernelSize + 1) / stride)};
+  // create memory descriptors for convolution data w/ no specified format
+  auto conv2_src_md = memory::desc({conv2_src_tz}, memory::data_type::f32,
+                                   memory::format_tag::any);
+  auto conv2_weights_md = memory::desc(
+      {conv2_weights_tz}, memory::data_type::f32, memory::format_tag::abcd);
+  auto conv2_dst_md = memory::desc({conv2_dst_tz}, memory::data_type::f32,
+                                   memory::format_tag::abcd);
+  memory::dims conv2_strides = {stride, stride};
+  memory::dims conv2_padding = {padding, padding};
+  auto desc = convolution_backward_data::desc(algorithm::convolution_auto, conv2_src_md, conv2_weights_md, conv2_dst_md, conv2_strides, conv2_padding, conv2_padding);
+  return convolution_backward_data::primitive_desc(desc, eng, get_conv2d_prim_desc<N, C, H, W, OC, KernelSize, padding, stride>(eng));
+}
+
+template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
+size_t padding, size_t stride>
+void convolution_backward_data(const dnnl::engine& engine, dnnl::stream& stream, const dnnl::memory& diff_dst, const dnnl::memory& weights, const dnnl::memory& diff_src) {
+  using namespace dnnl;
+  static auto prim_desc = get_convolution_backward_data_prim_desc<N, C, H, W, OC, KernelSize, padding, stride>(engine);
+  static auto conv = dnnl::convolution_backward_data(prim_desc);
+  assert(prim_desc.diff_dst_desc() == diff_dst.get_desc());
+  assert(prim_desc.weights_desc() == weights.get_desc());
+  assert(prim_desc.diff_src_desc() == diff_src.get_desc());
+  conv.execute(stream, {
+    {DNNL_ARG_DIFF_DST, diff_dst},
+    {DNNL_ARG_WEIGHTS, weights},
+    {DNNL_ARG_DIFF_SRC, diff_src}
+  });
 }
 
 template <size_t N, size_t IC>

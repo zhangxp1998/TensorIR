@@ -38,7 +38,7 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emit(", ")
       shallow(diff_gama_beta)
       emit(")")
-    case Node(s, "conv2d-backprop", List(Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride)), diff_dst, src, diff_weight, diff_bias), _)=>
+    case Node(s, "conv2d-backprop", List(Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride)), diff_dst, src, diff_weight, diff_bias), _) =>
       emit(s"convolution_backward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
       shallow(diff_dst)
       emit(", ")
@@ -47,6 +47,14 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       shallow(diff_weight)
       emit(", ")
       shallow(diff_bias)
+      emit(")")
+    case Node(s, "conv2d-data-backprop", List(Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride)), diff_dst, weight, diff_src), _) =>
+      emit(s"convolution_backward_data<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
+      shallow(diff_dst)
+      emit(", ")
+      shallow(weight)
+      emit(", ")
+      shallow(diff_src)
       emit(")")
     case Node(s, "logsoftmax-backward", List(diff_dst, dst, diff_src, Const((rows: Int, rowSize: Int))), _) =>
       emit(s"logsoftmax_backward<$rows, $rowSize>(eng, stream, ")

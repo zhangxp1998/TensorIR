@@ -151,16 +151,24 @@ trait TensorDifferentiation extends TensorOps {
       assert(d.dims.length == 4)
       assert(that.d.dims.length == 4)
       val Seq(oc, ic, kh, kw) = that.d.dims
+      assert(kh == kw, s"Conv2d does not support non-square kernel $kh $kw")
       val outputSize = x.getConv2dOutputSize(ic, oc, kh, padding, stride)
       val y = new TensorR(x.conv2d(that.x, bias.x, padding, stride), Tensor.zero[A](outputSize, AllocationType.Intermediate))
       k(y)
-      Adapter.g.reflectEffect(
+      Wrap[Unit](Adapter.g.reflectEffect(
         "conv2d-backprop", Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, x, that.d, bias.d).map(a => Unwrap(a.memDesc)): _*
       )(
         Unwrap(y.d.data), Unwrap(x.data)
       )(
         Unwrap(that.d.data), Unwrap(bias.d.data)
-      )
+      ))
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "conv2d-data-backprop", Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, that.x, d).map(a => Unwrap(a.memDesc)): _*
+      )(
+        Unwrap(y.d.data), Unwrap(that.x.data)
+      )(
+        Unwrap(d.data)
+      ))
     }
     def relu(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val y = new TensorR(x.relu(), d.copy())
