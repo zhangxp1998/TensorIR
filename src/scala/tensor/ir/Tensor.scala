@@ -13,6 +13,13 @@ object AllocationType extends Enumeration {
   val Data, Gradient, Intermediate, Parameter = Value
 }
 
+// A trait that maps to dnnl::memory::dims. It holds the dimension of tensors at runtime
+trait MemDims {
+}
+// A trait that maps to dnnl::memory. It holds the data pointer, format, and memory dims at runtime.
+trait MemDesc {
+}
+
 trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps {
   type AllocationType = AllocationType.AllocationType
   abstract class DataLoop {
@@ -68,12 +75,6 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     }
 
     Wrap[A](Adapter.g.reflect("/", Unwrap(readVar(sum)), Backend.Const(rows.asInstanceOf[A])))
-  }
-  // A trait that maps to dnnl::memory::dims. It holds the dimension of tensors at runtime
-  trait MemDims {
-  }
-  // A trait that maps to dnnl::memory. It holds the data pointer, format, and memory dims at runtime.
-  trait MemDesc {
   }
   object Tensor {
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
@@ -421,7 +422,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       )(
         Unwrap(data)
       )(
-        Unwrap(probs)
+        Unwrap(probs.data)
       ))
       probs
     }
@@ -442,6 +443,18 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         Wrap[Array[A]](Adapter.g.reflectRead("tensor-copy", unwrapped_xs:_*)(Unwrap(data), STORE)),
         allocType
       )
+    }
+
+    def foreach(f: Rep[A] => Unit, begin: Rep[Int] = 0, end: Rep[Int] = dims.product): Unit = {
+      val mA = Backend.Const(manifest[A])
+      val block = Adapter.g.reify(exp => Unwrap(f(Wrap[A](exp))))
+      Wrap[Unit](Adapter.g.reflectEffect(
+        "tensor-foreach", mA, Unwrap(data), block, Unwrap(begin), Unwrap(end)
+      )(
+        (block.eff.rkeys + Unwrap(data)).toSeq: _*
+      )(
+        (block.eff.wkeys + Unwrap(data)).toSeq: _*
+      ))
     }
 
     private def boolean_op(rhs: Tensor[A], boolean_operator: String): Tensor[Boolean] = {
