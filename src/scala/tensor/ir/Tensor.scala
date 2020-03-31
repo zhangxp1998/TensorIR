@@ -453,7 +453,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       )(
         (block.eff.rkeys + Unwrap(data)).toSeq: _*
       )(
-        (block.eff.wkeys + Unwrap(data)).toSeq: _*
+        block.eff.wkeys.toSeq: _*
       ))
     }
 
