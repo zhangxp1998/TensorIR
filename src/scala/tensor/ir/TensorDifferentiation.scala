@@ -37,7 +37,7 @@ trait TensorDifferentiation extends TensorOps {
       val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
       reset({
         val res = f(z)
-        res.d = Tensor.fill[Float](res.x.dims, 1, AllocationType.Gradient)
+        res.d.fill(1.0f)
       })
       z.d
     }
@@ -200,13 +200,13 @@ trait TensorDifferentiation extends TensorOps {
       val y = new TensorR(x.sumT(), Tensor.zero[A](Seq(1), AllocationType.Gradient))
       k(y)
       val gradient = y.d.unsafe_apply(0)
-      d.transform(_ => gradient)
+      d.fill(gradient)
     }
     def avg(): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val y = new TensorR(x.avgT(), Tensor.zero[A](Seq(1), AllocationType.Gradient))
       k(y)
       val gradient = infix_/(y.d.unsafe_apply(0), d.dims.product.asInstanceOf[A])
-      d.transform(_ => gradient)
+      d.fill(gradient)
     }
     def softmaxLoss(labels: Tensor[Int]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val res = TensorR(Seq(1), 0.asInstanceOf[A])
@@ -221,7 +221,7 @@ trait TensorDifferentiation extends TensorOps {
       }
       for (i <- 0 until rows: Rep[Range]) {
         val idx = i * rowSize + labels.unsafe_apply(i)
-        diff_dst.unsafe_update(idx, (-1).asInstanceOf[A])
+        diff_dst.unsafe_update(idx, (-1.0f/rows).asInstanceOf[A])
       }
       val d_dst = res.d.unsafe_apply(0)
       d.transform(a => infix_*(a, d_dst))
