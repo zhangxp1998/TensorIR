@@ -75,6 +75,26 @@ class TensorOpsTest extends FunSuite {
     val res = dslDriver.eval("0")
     val nums = res.map(_.toDouble)
     assert(nums.length == 1)
-    assert(nums.head == 1.0/rows)
+    assert(math.abs(nums.head - 4.9586297) <= 1e-5)
+  }
+  test("sumRows") {
+    val rows = 10
+    val dslDriver = new TensorDriverC[String,Unit] {
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val x = Tensor[Float](Seq(rows, rows), AllocationType.Data)
+        x.mapInplaceWithFlatIdx(idx => idx % rows + 1)
+        val dst = Tensor[Float](Seq(rows), AllocationType.Data)
+        x.sumRows(dst)
+        for (i <- 0 until rows: Rep[Range]) {
+          println(dst.unsafe_apply(i))
+        }
+      }
+    }
+    val res = dslDriver.eval("0")
+    val nums = res.map(_.toDouble)
+    assert(nums.length == 10)
+    nums.zipWithIndex.foreach{case (value, idx) =>
+      assert(value == (idx+1) * rows)
+    }
   }
 }
