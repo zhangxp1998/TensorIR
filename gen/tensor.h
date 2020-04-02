@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <numeric>
 template <size_t N, size_t C, size_t H, size_t W, size_t OutChannels,
           size_t KernelSize, size_t padding, size_t stride>
 static dnnl::convolution_forward::primitive_desc
@@ -183,6 +184,23 @@ template <typename DataType> void mmap_file(const char *path, size_t size) {
     abort();
   }
   return static_cast<DataType *>(p);
+}
+
+// mat should be a rows x cols matrix, vec should be a cols vector.
+// Compute the sum of rows of the matrix, store it in vec
+template <size_t rows, size_t cols>
+void sum_rows(float *mat, float *vec) {
+  static_assert(cols > 0, "The matrix should be a wellformed 2D matrix");
+  if (cols == 1) {
+    *vec = std::accumulate(vec, vec + cols, 0);
+    return;
+  }
+  std::copy(mat, mat + cols, vec);
+  for (size_t i = 1; i < rows; i ++) {
+    for (size_t j = 0; j < cols; j ++) {
+      vec[j] += mat[i*cols + j];
+    }
+  }
 }
 
 void sgemm(const char transA, const char transB, const float *a, const float *b,

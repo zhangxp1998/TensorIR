@@ -63,11 +63,11 @@ trait TensorDifferentiation extends TensorOps {
       cache
     }
 
-    def matmul(that: TensorR[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
+    def matmul(that: TensorR[A], bias: Option[TensorR[A]] = None): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>
       val M = cache.dims.head
       val K = that.cache.dims.head
       val N = that.cache.dims(1)
-      val y = new TensorR((cache.matmul(that.cache, AllocationType.Intermediate)): Tensor[A], Tensor.zero(Seq(M, N), AllocationType.Gradient))
+      val y = new TensorR((cache.matmul(that.cache, bias.map(_.x), AllocationType.Intermediate)): Tensor[A], Tensor.zero(Seq(M, N), AllocationType.Gradient))
       k(y)
       val m1: Tensor[A] = x
       val m2: Tensor[A] = that.x
@@ -80,6 +80,15 @@ trait TensorDifferentiation extends TensorOps {
       )(
         Unwrap(d.data), Unwrap(that.d.data)
       )
+      bias match {
+        case Some(value) =>
+          if (value.d.dims == diff_dst.dims)
+            Tensor.copy[A](diff_dst, value.d)
+          else
+            diff_dst.sumRows(value.d)
+        case None =>
+          // No work is needed!
+      }
     }
 
     def +(that: Rep[A]): TensorR[A]@diff = shift { k: (TensorR[A] => Unit) =>

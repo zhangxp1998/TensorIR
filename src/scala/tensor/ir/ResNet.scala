@@ -39,9 +39,10 @@ object ResNet {
         }
         class FCLayer(val inSize: Int, val outSize: Int) extends Layer {
           val weight = TensorR.rand(Seq(inSize, outSize), AllocationType.Parameter)
-          override def forward(x: TensorR[Float]): TensorR[Float]@diff = x matmul weight
+          val bias = TensorR.rand(Seq(outSize), AllocationType.Parameter)
+          override def forward(x: TensorR[Float]): TensorR[Float]@diff = x.matmul(weight, Some(bias))
 
-          override def parameters(): Seq[TensorR[Float]] = Seq(weight)
+          override def parameters(): Seq[TensorR[Float]] = Seq(weight, bias)
         }
 
         class Sequential(val layers: Layer*) extends Layer {
@@ -107,7 +108,7 @@ object ResNet {
         }
         class GradientDescent(val layer: Layer, val learningRate: Float) extends Optimizer {
           override def step(): Unit = layer.parameters().foreach { l =>
-              println(l.d.unsafe_apply(0))
+//              println(l.d.unsafe_apply(0))
               l.x -= l.d * Const(learningRate)
             }
         }
@@ -119,7 +120,7 @@ object ResNet {
         val labels = Tensor[Int](Seq(batchSize), AllocationType.Data)
         labels.fread("train_labels.bin", "double")
         val resNet = new ResNet()
-        val optimizer = new GradientDescent(resNet, 0.0001)
+        val optimizer = new GradientDescent(resNet, 1e-4)
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]) = {
           val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
@@ -130,8 +131,8 @@ object ResNet {
           })
           z.d
         }
-        for (_ <- 0 until 10: Rep[Range]) {
-          println("===========Iteration Begin===========")
+        for (_ <- 0 until 100: Rep[Range]) {
+//          println("===========Iteration Begin===========")
           resNet.zero_grad()
           grad(x => resNet.forward(x).softmaxLoss(labels))(input)
           optimizer.step()

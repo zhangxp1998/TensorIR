@@ -192,7 +192,7 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       val byteSize = s"${dims.product} * sizeof(${remap(manifest)})"
       emit(s", $byteSize))")
 
-    case Node(s, "matrix-multiply", List(mA, lhs, rhs, result, Const(Seq(m: Int, k: Int, n: Int))), _) =>
+    case Node(s, "matrix-multiply", List(mA, lhs, rhs, result, Const(Seq(m: Int, k: Int, n: Int)), Const(beta)), _) =>
       if (mA.toString != "Float") {
         throw new RuntimeException(s"Only floating point values are supported: ${mA.toString}")
       }
@@ -202,7 +202,7 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       shallow(rhs)
       emit(", ")
       shallow(result)
-      emit(s", $m, $k, $n, 1.0f, 0.0f)")
+      emit(s", $m, $k, $n, 1.0f, $beta)")
 
     case n @ Node(s,"P",List(x),_) =>
       emit("""printf("""")
@@ -329,13 +329,21 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(s", dnnl::memory::data_type::f32, dnnl::memory::format_tag::$format}, eng, ")
       shallow(data)
       emit(")")
-    case Node(s, "tensor-data-copy", List(mA, src, dst, Const(dims: Seq[Int])), _) =>
+    case Node(s, "tensor-data-copy", List(_, src, dst, Const(dims: Seq[Int]), src_begin, src_end, dst_begin), _) =>
       val elemCount = dims.product
       emit("std::copy(")
+      emitBeginEnd(src, src_begin, src_end)
+      emit(", ")
+      shallow(dst)
+      emit("+")
+      shallow(dst_begin)
+      emit(")")
+    case Node(s, "tensor-sum-rows", List(src, dst, Const(dims: Seq[Int])), _) =>
+      val ROWS = dims.head
+      val COLS = dims.tail.product
+      emit(s"sum_rows<$ROWS, $COLS>(")
       shallow(src)
       emit(", ")
-      shallow(src)
-      emit(s"+$elemCount, ")
       shallow(dst)
       emit(")")
     case Node(s, "tensor-fill", List(mA, data, fillVal, Const(dims: Seq[Int])), _) =>

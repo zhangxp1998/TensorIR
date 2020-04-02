@@ -106,16 +106,33 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def createMemDesc[A: Manifest: Ordering](memDims: Rep[MemDims], tensor: Tensor[A]): Rep[MemDesc] = {
       Wrap[MemDesc](Adapter.g.reflect("mem-desc", Unwrap(memDims), Unwrap(tensor.data), Backend.Const(tensor.dims)))
     }
-    def copy[A: Manifest](src: Tensor[A], dst: Tensor[A]): Unit = {
-      assert(src.dims.product == dst.dims.product, s"Number of elements must match! ${src.dims}, ${dst.dims}")
+    def copy[A: Manifest](src: Tensor[A], src_begin: Rep[Int], src_end: Rep[Int], dst_begin: Rep[Int], dst: Tensor[A]): Unit = {
       val mA = Backend.Const(manifest[A])
       Wrap[Unit](Adapter.g.reflectEffect(
-        "tensor-data-copy", mA, Unwrap(src.data), Unwrap(dst.data), Backend.Const(src.dims)
+        "tensor-data-copy", mA, Unwrap(src.data), Unwrap(dst.data), Backend.Const(src.dims), Unwrap(src_begin), Unwrap(src_end), Unwrap(dst_begin)
       )(
         Unwrap(src.data)
       )(
         Unwrap(dst.data)
       ))
+    }
+    def copy[A: Manifest](src: Tensor[A], dst: Tensor[A]): Unit = {
+      assert(src.dims.product == dst.dims.product, s"Number of elements must match! ${src.dims}, ${dst.dims}")
+      copy(src, 0, src.dims.product, 0, dst)
+    }
+
+    // Copying M vector into an NxM matrix, in a row-wise fashion
+    def broadcast_copy[A: Manifest](src: Tensor[A], dst: Tensor[A]): Unit = {
+      assert(src.dims.length == 1)
+      assert(dst.dims.length == 2)
+      assert(src.dims.head == dst.dims(1))
+
+      val M: Int = src.dims.head
+      val N: Int = dst.dims.head
+      for (i <- 0 until N: Rep[Range]) {
+        val begin = i * M
+        Tensor.copy[A](src, 0, M, begin, dst)
+      }
     }
   }
   class Tensor[A: Manifest: Ordering] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
@@ -260,7 +277,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       binary_broadcast((a, b) => Wrap[A](Adapter.INT(Unwrap(a))./(Adapter.INT(Unwrap(b))).x): Rep[A], rhs)
     }
 
-    def matmul(rhs: Tensor[A], allocType: AllocationType): Tensor[A] = {
+    def matmul(rhs: Tensor[A], bias_option: Option[Tensor[A]] = None, allocType: AllocationType): Tensor[A] = {
       val rhs_dims: Seq[Int] = rhs.dims
       val lhs_dims: Seq[Int] = dims
       val mA = Backend.Const(manifest[A])
@@ -276,11 +293,42 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
         case _::tail::Nil => tail
         case _::Nil => 1
       }
+      bias_option match {
+        case Some(bias) =>
+          assert(bias.dims.length <= 2, s"Unsupported bias dimension: ${bias.dims}")
+          bias.dims match {
+            case d if d.length == 1 =>
+              assert(d.head == N, s"1D bias should have dim $N")
+            case d if d.length == 2 =>
+              assert(bias.dims == Seq(M, N), s"2D Bias should have same dims as result ${bias.dims}, ${Seq(M, N)}")
+          }
+        case None =>
 
-      // vector-vector multiplication
-      val result = Tensor[A](Seq(M, N), allocType)
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(rhs.data), Unwrap(result.data), Backend.Const(Seq(M, K, N)))
-      Wrap[Unit](Adapter.g.reflectEffect("matrix-multiply", unwrapped_xs:_*)(Unwrap(data), Unwrap(rhs.data))(Unwrap(result.data)))
+      }
+
+      // bias might be in shape MxN or N. In latter case a broadcast is required
+      val (result, beta) = bias_option match {
+        case Some(bias) =>
+          if (bias.dims == Seq(M, N)) {
+            (bias.copy(), 1.0f)
+          } else {
+            val res = Tensor[A](Seq(M, N), allocType)
+            for (i <- 0 until M: Rep[Range]) {
+              val begin = i * N
+              Tensor.copy[A](bias, 0, N, begin, res)
+            }
+            (res, 1.0f)
+          }
+        case None => (Tensor[A](Seq(M, N), allocType), 0.0f)
+      }
+      Wrap[Unit](
+        Adapter.g.reflectEffect(
+          "matrix-multiply", mA, Unwrap(data), Unwrap(rhs.data), Unwrap(result.data), Backend.Const(Seq(M, K, N)), Backend.Const(beta)
+        )(
+          Unwrap(data), Unwrap(rhs.data)
+        )(
+          Unwrap(result.data))
+      )
       result
     }
     def getConvOutputSize(kernelSize: Seq[Int], pading: Int, stride: Int): Seq[Int] = {
@@ -394,6 +442,18 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
       val sumVal = sum()
       res.unsafe_update(0, sumVal)
       res
+    }
+    def sumRows(out: Tensor[A]): Tensor[A] = {
+      assert(dims.length >= 2, "Tensor should be at least 2D. Perhaps you mean .sum() instead?")
+      assert(dims.tail == out.dims, s"Out vector should have same trailing dimension as input ${dims.tail}, ${out.dims}")
+      Adapter.g.reflectEffect(
+        "tensor-sum-rows", Unwrap(data), Unwrap(out.data), Backend.Const(dims)
+      )(
+        Unwrap(data)
+      )(
+        Unwrap(out.data)
+      )
+      out
     }
     def avgT(): Tensor[A] = {
       val res = Tensor[A](Seq(1), AllocationType.Intermediate)
@@ -514,7 +574,7 @@ object Runer {
         mat1(Seq(2, 2)) = 1.0
         val mat2 = Tensor[Float](Seq(3, 3), AllocationType.Data)
         mat2.mapInplaceWithFlatIdx(idx => idx)
-        val mat3 = mat1.matmul(mat2, AllocationType.Data)
+        val mat3 = mat1.matmul(mat2, None, AllocationType.Data)
         println(mat3(0, 0))
         println(mat3(0, 1))
         println(mat3(0, 2))
