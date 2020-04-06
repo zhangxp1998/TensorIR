@@ -11,3 +11,5 @@ snippet.cpp
 snippet.dSYM
 memory.z3
 gen/build
+*.bin
+*.npy
