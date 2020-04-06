@@ -109,11 +109,12 @@ object ResNet {
         class GradientDescent(val layer: Layer, val learningRate: Float) extends Optimizer {
           override def step(): Unit = layer.parameters().foreach { l =>
 //              println(l.d.unsafe_apply(0))
-              l.x -= l.d * Const(learningRate)
-            }
+            l.d.all_average(MPI.MPI_COMM_WORLD)
+            l.x -= l.d * Const(learningRate)
+          }
         }
 
-        val batchSize = 6000
+        val batchSize = 1500
         val imgSize = 28
         val input = Tensor[Float](Seq(batchSize, 1, imgSize, imgSize), AllocationType.Data)
         input.fread("train_images.bin", "uint8_t")
@@ -131,6 +132,9 @@ object ResNet {
           })
           z.d
         }
+        resNet.parameters().foreach(param =>
+          param.x.all_average(MPI.MPI_COMM_WORLD)
+        )
         for (_ <- 0 until 100: Rep[Range]) {
 //          println("===========Iteration Begin===========")
           resNet.zero_grad()

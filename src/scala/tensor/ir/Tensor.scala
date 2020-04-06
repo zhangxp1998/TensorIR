@@ -20,7 +20,7 @@ trait MemDims {
 trait MemDesc {
 }
 
-trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps {
+trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps with MPI {
   type AllocationType = AllocationType.AllocationType
   abstract class DataLoop {
     def foreach(f: Rep[Int] => Unit): Unit
@@ -97,7 +97,7 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     }
     def rand(dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = {
       val tensor = Tensor[Float](dims, allocType)
-      tensor.mapInplace(_ => randFloat())
+      tensor.mapInplace(_ => randFloat() - 0.5f)
       tensor
     }
     def createMemDims(dims: Seq[Int]): Rep[MemDims] = {
@@ -435,6 +435,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
           Seq(dst, avg, variance).map(a => Unwrap(a.data)): _*
         )
       )
+      dst.all_average(MPI.MPI_COMM_WORLD)
+      avg.all_average(MPI.MPI_COMM_WORLD)
+      variance.all_average(MPI.MPI_COMM_WORLD)
       (dst, avg, variance)
     }
     def sumT(): Tensor[A] = {
@@ -534,7 +537,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
 
     def fread(path: String, dtype: String): Unit = {
       val mA = Backend.Const(manifest[A])
-      Wrap[Unit](Adapter.g.reflectEffect("tensor-fread", mA, Unwrap(data), Backend.Const(path), Backend.Const(dims), Backend.Const(dtype))(Adapter.CTRL)(Unwrap(data)))
+      val offset = MPI.comm_rank(MPI.MPI_COMM_WORLD) * dims.product
+      Wrap[Unit](Adapter.g.reflectEffect("tensor-fread", mA, Unwrap(data), Backend.Const(path), Backend.Const(dims), Backend.Const(dtype), Unwrap(offset))(Adapter.CTRL)(Unwrap(data)))
+    }
+    def all_average(comm: Rep[MPI_Comm]): Unit = {
+      MPI.All_average[A](comm, data, dims.product)
     }
   }
   def println(x: Tensor[_]): Unit = {

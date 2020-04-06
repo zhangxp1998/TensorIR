@@ -140,7 +140,7 @@ void logsoftmax_forward(const dnnl::engine &engine, dnnl::stream &stream,
 }
 
 template <typename FileType, typename DataType>
-void load_bin_convert(DataType *data, const char *path, size_t elem_count) {
+void load_bin_convert(DataType *data, const char *path, size_t elem_count, size_t offsetElems) {
   int err = 0;
   int fd = open(path, O_RDONLY);
   if (fd < 0) {
@@ -163,7 +163,7 @@ void load_bin_convert(DataType *data, const char *path, size_t elem_count) {
   }
   assert(elem_count <= bytes / sizeof(FileType));
   FileType *file = static_cast<FileType *>(p);
-  for (size_t i = 0; i < elem_count; i++) {
+  for (size_t i = offsetElems; i < elem_count; i++) {
     data[i] = static_cast<DataType>(file[i]);
   }
   munmap(file, bytes);

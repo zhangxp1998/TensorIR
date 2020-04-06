@@ -7,10 +7,11 @@ import lms.core.{Backend, Graph}
 import lms.core.stub.DslGenC
 import tensor.ir.{AllocationType, RandomOpsCodegen, StagedMemoryAllocator}
 import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock}
+import tensor.ir.backend.MPICodeGen
 
 import scala.collection.mutable
 
-trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
+trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen {
   val debug = false
   override def init(g: Graph): Graph = {
     val graph = super.init(g)
@@ -310,10 +311,12 @@ trait CPUTensorCodeGen extends DslGenC with RandomOpsCodegen {
       emit(")")
     case Node(s, "mem-dims", List(Backend.Const(dims: Seq[Int])), _) =>
       emit(s"dnnl::memory::dims({${ dims.mkString(", ")} })")
-    case Node(s, "tensor-fread", List(Const(mA: Manifest[_]), data, Const(path: String), Const(dims: Seq[Int]), Const(dtype: String)), _) =>
+    case Node(s, "tensor-fread", List(Const(mA: Manifest[_]), data, Const(path: String), Const(dims: Seq[Int]), Const(dtype: String), offset), _) =>
       emit(s"load_bin_convert<$dtype, ${remap(mA)}>(")
       shallow(data)
-      emit(s", ${quote(path)}, ${dims.product})")
+      emit(s", ${quote(path)}, ${dims.product}, ")
+      shallow(offset)
+      emit(")")
     case Node(s, "tensor-mmap", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), Const(path: String)), _) =>
       val elem_count = dims.product
       emit(s"mmap_file<${remap(mA)}>(${quote(path)}, $elem_count)")
