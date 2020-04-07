@@ -1,6 +1,6 @@
 -- add rules: debug/release
-add_requires("brew::mkl-dnn", {alias = "mkl-dnn"})
-add_requires("brew::open-mpi", {alias = "mpi"})
+add_requires("mkl-dnn", {alias = "mkl-dnn"})
+add_requires("open-mpi", {alias = "mpi"})
 
 add_rules("mode.debug", "mode.release")
 
