@@ -23,13 +23,13 @@ get_conv2d_prim_desc(const dnnl::engine &eng) {
       static_cast<long long>((W + 2 * padding - KernelSize + 1) / stride)};
   // create memory descriptors for convolution data w/ no specified format
   auto conv2_src_md = memory::desc({conv2_src_tz}, memory::data_type::f32,
-                                   memory::format_tag::any);
+                                   memory::format_tag::nchw);
   auto conv2_bias_md = memory::desc({conv2_bias_tz}, memory::data_type::f32,
-                                    memory::format_tag::any);
+                                    memory::format_tag::a);
   auto conv2_weights_md = memory::desc(
-      {conv2_weights_tz}, memory::data_type::f32, memory::format_tag::any);
+      {conv2_weights_tz}, memory::data_type::f32, memory::format_tag::nchw);
   auto conv2_dst_md = memory::desc({conv2_dst_tz}, memory::data_type::f32,
-                                   memory::format_tag::any);
+                                   memory::format_tag::nchw);
   memory::dims conv2_strides = {stride, stride};
   memory::dims conv2_padding = {padding, padding};
 
