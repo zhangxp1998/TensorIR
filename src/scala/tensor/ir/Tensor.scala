@@ -95,9 +95,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
     def zero[A: Manifest: Ordering](dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       Tensor.fill[A](dims, 0.asInstanceOf[A], allocType)
     }
-    def rand(dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = {
+    def rand(dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = rand(dims, 0.0f, 1.0f, allocType)
+    def rand(dims: Seq[Int], lower: Float, upper: Float, allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = {
       val tensor = Tensor[Float](dims, allocType)
-      tensor.mapInplace(_ => randFloat() - 0.5f)
+      val distribution = getUniformFloatDistribution(lower, upper)
+      tensor.mapInplace(_ => sampleDistribution(distribution))
       tensor
     }
     def createMemDims(dims: Seq[Int]): Rep[MemDims] = {

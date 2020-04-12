@@ -30,8 +30,9 @@ trait TensorDifferentiation extends TensorOps {
       tensor.mapInplaceWithFlatIdx(idx => f(idx))
       TensorR(tensor)
     }
-    def rand(dims: Seq[Int], allocType: AllocationType): TensorR[Float] = {
-      TensorR(Tensor.rand(dims, allocType))
+    def rand(dims: Seq[Int], allocType: AllocationType): TensorR[Float] = rand(dims, 0.0f, 1.0f, allocType)
+    def rand(dims: Seq[Int], lower: Float, upper: Float, allocType: AllocationType): TensorR[Float] = {
+      TensorR(Tensor.rand(dims, lower, upper, allocType))
     }
     def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
       val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))

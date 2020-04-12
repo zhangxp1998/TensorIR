@@ -18,8 +18,11 @@ object ResNet {
         }
         class Conv2D(val inChannels: Int, val outChannels: Int, val kernelSize: Int, val stride: Int, val padding: Int) extends Layer {
           val kernels: TensorR[Float] =
-            TensorR.rand(Seq(outChannels, inChannels, kernelSize, kernelSize), AllocationType.Parameter)
-          val bias: TensorR[Float] = TensorR.rand(Seq(outChannels), AllocationType.Parameter)
+            TensorR.rand(
+              Seq(outChannels, inChannels, kernelSize, kernelSize),
+              0.0f, 1.0f/(inChannels*kernelSize*kernelSize),
+              AllocationType.Parameter)
+          val bias: TensorR[Float] = TensorR.rand(Seq(outChannels), -1.0f, 1.0f, AllocationType.Parameter)
           def forward(x: TensorR[Float]): TensorR[Float]@diff = {
             assert(x.x.dims(1) == inChannels)
             x.conv2d(kernels, bias, padding, stride)
@@ -38,8 +41,8 @@ object ResNet {
           override def parameters(): Seq[TensorR[Float]] = Seq()
         }
         class FCLayer(val inSize: Int, val outSize: Int) extends Layer {
-          val weight = TensorR.rand(Seq(inSize, outSize), AllocationType.Parameter)
-          val bias = TensorR.rand(Seq(outSize), AllocationType.Parameter)
+          val weight = TensorR.rand(Seq(inSize, outSize), 0.0f, 1.0f/(inSize*outSize), AllocationType.Parameter)
+          val bias = TensorR.rand(Seq(outSize), -1.0f, 1.0f, AllocationType.Parameter)
           override def forward(x: TensorR[Float]): TensorR[Float]@diff = x.matmul(weight, Some(bias))
 
           override def parameters(): Seq[TensorR[Float]] = Seq(weight, bias)
@@ -114,7 +117,7 @@ object ResNet {
           }
         }
 
-        val batchSize = 1500
+        val batchSize = 6000
         val imgSize = 28
         val input = Tensor[Float](Seq(batchSize, 1, imgSize, imgSize), AllocationType.Data)
         input.fread("train_images.bin", "uint8_t")
