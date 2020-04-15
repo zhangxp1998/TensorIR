@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <numeric>
+#include <cassert>
+
 template <size_t N, size_t C, size_t H, size_t W, size_t OutChannels,
           size_t KernelSize, size_t padding, size_t stride>
 static dnnl::convolution_forward::primitive_desc
