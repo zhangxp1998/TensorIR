@@ -53,8 +53,8 @@ void MPI_All_average(MPI_Comm comm, const void *send_buf, T *recv_buf, size_t co
   auto start = system_clock::now();
   int err = MPI_Allreduce(send_buf, recv_buf, size, get_mpi_type<T>(), MPI_SUM, comm);
   check_mpi_err(err);
-  std::transform(recv_buf, recv_buf+size, recv_buf, [comm_size](T f){ return f/comm_size; });
   auto end = system_clock::now();
+  std::transform(recv_buf, recv_buf+size, recv_buf, [comm_size](T f){ return f/comm_size; });
   mpi_duration += duration_cast<decltype(mpi_duration)>(end - start);
 }
 
