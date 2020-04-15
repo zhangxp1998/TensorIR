@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 import torch
 import numpy as np
+import sys
+if len(sys.argv) != 2:
+    print("Usage:", sys.argv[0], "<num threads>")
+    sys.exit(0)
+torch.set_num_threads(int(sys.argv[1]))
+torch.set_num_interop_threads(min(int(sys.argv[1]), 4))
 
 train_x = np.load("train_images.npy")
 train_y = np.load("train_labels.npy")
@@ -29,28 +35,6 @@ y.requires_grad = False
 class Flatten(torch.nn.Module):
     def forward(self, input):
         return input.view(input.size(0), -1)
-
-class SimpleNet(torch.nn.Module):
-    def __init__(self):
-        super(SimpleNet, self).__init__()
-        self.conv1 = torch.nn.Conv2d(1, 3, 3, stride=1, padding=1)
-        self.bnorm = torch.nn.BatchNorm2d(3)
-        self.relu = torch.nn.ReLU()
-
-        self.conv2 = torch.nn.Conv2d(3, 8, 3, stride=2, padding=1)
-        self.flatten = Flatten()
-        self.linear = torch.nn.Linear(1568, 10)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bnorm(x)
-
-        x = self.relu(x)
-        x = self.conv2(x)
-
-        x = self.flatten(x)
-        x = self.linear(x)
-        return x
 
 # Use the nn package to define our model as a sequence of layers. nn.Sequential
 # is a Module which contains other Modules, and applies them in sequence to
