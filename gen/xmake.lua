@@ -13,7 +13,7 @@ target("snippet")
 	set_languages("cxx17")
 
     -- add files
-    add_files("snippet.cpp", "tensor.cpp")
+    add_files("snippet.cpp", "tensor.cpp", "mpi_helper.cpp", "tensor.h", "tensor_diff.h", "tensor_constants.h")
 
     -- add deps
 	add_packages("mpi", "mkl-dnn")

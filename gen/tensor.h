@@ -206,4 +206,6 @@ void sum_rows(float *mat, float *vec) {
 void sgemm(const char transA, const char transB, const float *a, const float *b,
            float *c, const size_t M, const size_t K, const size_t N,
            float alpha, float beta);
+
+void cleanup() noexcept;
 #endif

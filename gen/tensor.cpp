@@ -1,6 +1,8 @@
 #include "tensor.h"
 #include <fstream>
+#include <iostream>
 #include <stdio.h>
+#include "mpi_helper.h"
 
 void matmul_backprop(const float *m1, const float *m2, const float *y,
                      float *d1, float *d2, const size_t M, const size_t K,
@@ -20,4 +22,10 @@ void sgemm(const char transA, const char transB, const float *a, const float *b,
   int64_t ldb = tolower(transB) == 'n' ? N : K;
   int64_t ldc = N;
   dnnl_sgemm(transA, transB, M, N, K, alpha, a, lda, b, ldb, beta, c, ldc);
+}
+
+
+void cleanup() noexcept {
+  MPI_Finalize();
+  std::cerr << "Time spent in MPI calls: " << mpi_duration.count() << "ms\n";
 }

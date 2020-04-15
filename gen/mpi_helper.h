@@ -4,67 +4,58 @@
 #include <mpi.h>
 #include <stdio.h>
 #include <algorithm>
+#include <chrono>
 
-static void check_mpi_err(int err) noexcept {
-  if (err != MPI_SUCCESS) {
-    char err_buffer[1024 * 512];
-    int result_len = -1;
-    MPI_Error_string(err, err_buffer, &result_len);
-    fprintf(stderr, "%s\n", err_buffer);
-    abort();
-  }
-}
+void check_mpi_err(int err) noexcept;
 
-static int get_comm_rank(MPI_Comm comm) noexcept {
-  int rank = -1;
-  int err = MPI_Comm_rank(comm, &rank);
-  check_mpi_err(err);
-  return rank;
-}
+int get_comm_rank(MPI_Comm comm) noexcept;
 
-static int get_comm_size(MPI_Comm comm) noexcept {
-  int size = -1;
-  int err = MPI_Comm_size(comm, &size);
-  check_mpi_err(err);
-  return size;
-}
+int get_comm_size(MPI_Comm comm) noexcept;
 
 template <typename T>
-MPI_Datatype get_mpi_type();
+[[maybe_unused]] static MPI_Datatype get_mpi_type() noexcept;
 
 template <>
-MPI_Datatype get_mpi_type<float>() {
+MPI_Datatype get_mpi_type<float>() noexcept {
   return MPI_FLOAT;
 }
 
 template <>
-MPI_Datatype get_mpi_type<int>() {
+MPI_Datatype get_mpi_type<int>() noexcept {
   return MPI_INT;
 }
 
 template <>
-MPI_Datatype get_mpi_type<double>() {
+MPI_Datatype get_mpi_type<double>() noexcept {
   return MPI_DOUBLE;
 }
 
 template <>
-MPI_Datatype get_mpi_type<long>() {
+MPI_Datatype get_mpi_type<long>() noexcept {
   return MPI_LONG;
 }
 
 template <>
-MPI_Datatype get_mpi_type<char>() {
+MPI_Datatype get_mpi_type<char>() noexcept {
   return MPI_CHAR;
 }
 
 
+extern std::chrono::milliseconds mpi_duration;
+
 template
 <size_t size, typename T>
 void MPI_All_average(MPI_Comm comm, const void *send_buf, T *recv_buf, size_t comm_size) {
-  
+  if (comm_size == 1) {
+    return;
+  }
+  using namespace std::chrono;
+  auto start = system_clock::now();
   int err = MPI_Allreduce(send_buf, recv_buf, size, get_mpi_type<T>(), MPI_SUM, comm);
   check_mpi_err(err);
   std::transform(recv_buf, recv_buf+size, recv_buf, [comm_size](T f){ return f/comm_size; });
+  auto end = system_clock::now();
+  mpi_duration += duration_cast<decltype(mpi_duration)>(end - start);
 }
 
 #endif
