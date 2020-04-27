@@ -15,6 +15,7 @@ object ResNet {
           def zero_grad(): Unit = {
             parameters().foreach(u => u.d.fill(0))
           }
+          def apply(x: TensorR[Float]): TensorR[Float]@diff = forward(x)
         }
         class Conv2D(val inChannels: Int, val outChannels: Int, val kernelSize: Int, val stride: Int, val padding: Int) extends Layer {
           val kernels: TensorR[Float] =
@@ -91,28 +92,13 @@ object ResNet {
 
           override def parameters(): Seq[TensorR[Float]] = left.parameters() ++ shortcut.parameters()
         }
-        class ResNet extends Layer {
-          val layer = new Sequential(
-            new Conv2D(1, 3, 3, 1, 1),
-            new BatchNorm(3),
-            new ReLU(),
-            new Conv2D(3, 8, 3, 2, 1),
-            new Flatten(),
-            new FCLayer(1568, 10),
-//            new ResidualBlock(3, 8, 2),
-          )
-
-          override def forward(x: TensorR[Float]): TensorR[Float]@diff = layer.forward(x)
-
-          override def parameters(): Seq[TensorR[Float]] = layer.parameters()
-        }
         trait Optimizer {
           def step(): Unit
         }
         class GradientDescent(val layer: Layer, val learningRate: Float) extends Optimizer {
           override def step(): Unit = layer.parameters().foreach { l =>
 //              println(l.d.unsafe_apply(0))
-            l.d.all_average(MPI.MPI_COMM_WORLD)
+//            l.d.all_average(MPI.MPI_COMM_WORLD)
             l.x -= l.d * Const(learningRate)
           }
         }
@@ -123,8 +109,6 @@ object ResNet {
         input.fread("train_images.bin", "uint8_t")
         val labels = Tensor[Int](Seq(batchSize), AllocationType.Data)
         labels.fread("train_labels.bin", "double")
-        val resNet = new ResNet()
-        val optimizer = new GradientDescent(resNet, 1e-4)
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]) = {
           val z = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
@@ -135,13 +119,22 @@ object ResNet {
           })
           z.d
         }
-        resNet.parameters().foreach(param =>
-          param.x.all_average(MPI.MPI_COMM_WORLD)
+        val simpleNet =  new Sequential(
+          new Conv2D(1, 3,
+            3, 1, 1),
+          new BatchNorm(3),
+          new ReLU(),
+          new Conv2D(3, 8,
+            3, 2, 1),
+          new Flatten(),
+          new FCLayer(1568, 10),
         )
+        val optimizer = new GradientDescent(simpleNet,
+          1e-4)
         for (_ <- 0 until 100: Rep[Range]) {
-//          println("===========Iteration Begin===========")
-          resNet.zero_grad()
-          grad(x => resNet.forward(x).softmaxLoss(labels))(input)
+          simpleNet.zero_grad()
+          grad(x =>
+            simpleNet(x).softmaxLoss(labels))(input)
           optimizer.step()
         }
       }

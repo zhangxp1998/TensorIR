@@ -15,11 +15,23 @@ target_link_libraries(CPU_Runtime
   PUBLIC
   MKLDNN::mkldnn
 )
+add_library(GPU_Runtime gpu_tensor.h gpu_tensor.cpp)
+target_link_libraries(GPU_Runtime
+	PUBLIC
+	cudnn
+)
 
 add_executable(snippet snippet.cpp)
 
 target_link_libraries(snippet
   PRIVATE
   CPU_Runtime
+  PRIVATE
+  MPI::MPI_CXX)
+
+add_executable(snippet_gpu snippet.cu)
+target_link_libraries(snippet_gpu
+  PRIVATE
+  GPU_Runtime
   PRIVATE
   MPI::MPI_CXX)

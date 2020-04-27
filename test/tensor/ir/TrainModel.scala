@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 import java.util
 import lms.macros.SourceContext
 
-trait TrainModel extends TensorOps {
+trait TrainModel extends CPUTensorOps {
 
   object LoadImgAndLable {
     private val MAGIC_OFFSET = 0

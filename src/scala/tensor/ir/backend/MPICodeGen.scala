@@ -7,6 +7,9 @@ import tensor.ir.RandomOpsCodegen
 
 trait MPICodeGen extends DslGenC {
   registerHeader("\"mpi_helper.h\"")
+  registerInit("MPI") {
+    emitln("MPI_Init(pargc, pargv);")
+  }
   override def remap(m: Manifest[_]): String = m.toString match {
     case s if s.contains("MPI_Comm") => "MPI_Comm"
     case _ => super.remap(m)

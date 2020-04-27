@@ -3,7 +3,7 @@ package tensor.ir
 import org.scalatest.FunSuite
 import lms.macros.SourceContext
 
-class TensorOpsTest extends FunSuite {
+class CPUTensorOpsTest extends FunSuite {
   test("relu") {
     val length = 20
     val dslDriver = new TensorDriverC[String,Unit] {

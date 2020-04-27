@@ -1,26 +1,12 @@
 package tensor.ir
 
-import java.io.PrintWriter
-
 import lms.core.Backend.{Const, _}
 import lms.core._
 import lms.core.stub._
 import lms.macros.SourceContext
 import scala.tensor.ir.backend.CPUTensorCodeGen
 
-object AllocationType extends Enumeration {
-  type AllocationType = Value
-  val Data, Gradient, Intermediate, Parameter = Value
-}
-
-// A trait that maps to dnnl::memory::dims. It holds the dimension of tensors at runtime
-trait MemDims {
-}
-// A trait that maps to dnnl::memory. It holds the data pointer, format, and memory dims at runtime.
-trait MemDesc {
-}
-
-trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps with MPI {
+trait CPUTensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps {
   type AllocationType = AllocationType.AllocationType
   abstract class DataLoop {
     def foreach(f: Rep[Int] => Unit): Unit
@@ -437,9 +423,9 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
           Seq(dst, avg, variance).map(a => Unwrap(a.data)): _*
         )
       )
-      dst.all_average(MPI.MPI_COMM_WORLD)
-      avg.all_average(MPI.MPI_COMM_WORLD)
-      variance.all_average(MPI.MPI_COMM_WORLD)
+//      dst.all_average(MPI.MPI_COMM_WORLD)
+//      avg.all_average(MPI.MPI_COMM_WORLD)
+//      variance.all_average(MPI.MPI_COMM_WORLD)
       (dst, avg, variance)
     }
     def sumT(): Tensor[A] = {
@@ -539,11 +525,11 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
 
     def fread(path: String, dtype: String): Unit = {
       val mA = Backend.Const(manifest[A])
-      val offset = MPI.comm_rank(MPI.MPI_COMM_WORLD) * dims.product
+      val offset = /*MPI.comm_rank(MPI.MPI_COMM_WORLD) * */ dims.product
       Wrap[Unit](Adapter.g.reflectEffect("tensor-fread", mA, Unwrap(data), Backend.Const(path), Backend.Const(dims), Backend.Const(dtype), Unwrap(offset))(Adapter.CTRL)(Unwrap(data)))
     }
     def all_average(comm: Rep[MPI_Comm]): Unit = {
-      MPI.All_average[A](comm, data, dims.product)
+      //MPI.All_average[A](comm, data, dims.product)
     }
   }
   def println(x: Tensor[_]): Unit = {
@@ -551,7 +537,20 @@ trait TensorOps extends Base with Equal with OrderingOps with PrimitiveOps with 
   }
 }
 
-abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] with TensorOps { q =>
+object AllocationType extends Enumeration {
+  type AllocationType = Value
+  val Data, Gradient, Intermediate, Parameter = Value
+}
+
+// A trait that maps to dnnl::memory::dims. It holds the dimension of tensors at runtime
+trait MemDims {
+}
+// A trait that maps to dnnl::memory. It holds the data pointer, format, and memory dims at runtime.
+trait MemDesc {
+}
+
+
+abstract class TensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] with CPUTensorOps { q =>
   override val codegen = new CPUTensorCodeGen {
     override val IR: q.type = q
   }

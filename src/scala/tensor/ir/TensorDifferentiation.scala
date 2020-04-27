@@ -15,7 +15,7 @@ trait Diff {
   type diff = cps[Unit]
 }
 
-trait TensorDifferentiation extends TensorOps {
+trait TensorDifferentiation extends CPUTensorOps {
 
   object TensorR {
     def apply[T: Manifest: Numeric](dims: Seq[Int], fillVal: T): TensorR[T] = {

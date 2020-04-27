@@ -7,11 +7,11 @@ import lms.core.{Backend, Graph}
 import lms.core.stub.DslGenC
 import tensor.ir.{AllocationType, RandomOpsCodegen, StagedMemoryAllocator}
 import tensor.ir.StagedMemoryAllocator.{Allocation, Deallocation, MemoryBlock}
-import tensor.ir.backend.MPICodeGen
+import tensor.ir.backend.{MPICodeGen, PrintfCodeGen}
 
 import scala.collection.mutable
 
-trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen {
+trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeGen {
   val debug = false
   override def init(g: Graph): Graph = {
     val graph = super.init(g)
@@ -205,12 +205,6 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen {
       shallow(result)
       emit(s", $m, $k, $n, 1.0f, $beta)")
 
-    case n @ Node(s,"P",List(x),_) =>
-      emit("""printf("""")
-      emit(format(x))
-      emit("""\n", """) // Should look like <BEGIN>\n", <END>
-      shallow(x)
-      emit(")")
     case Node(s, "tensor-accumulate-range", List(Const(mA: Manifest[_]), data, begin, end), _) =>
       emit("std::accumulate(")
       emitBeginEnd(data, begin, end)
@@ -370,22 +364,6 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen {
   }
   def quote(s: String): String = {
     "\"" + s.replaceAllLiterally("\\", "\\\\") + "\""
-  }
-  def format(x: Def): String = x match {
-    case exp: Exp => exp match {
-      case s@Sym(_) => typeMap(s).toString match {
-        case m if m.matches("""Array\[.*\]""") =>
-          "%p"
-        case "Float" =>
-          "%f"
-        case "Int" =>
-          "%d"
-      }
-      case Const(_: Int) => "%d"
-      case Const(_: Float) => "%f"
-      case _ => "%s"
-    }
-    case _ => "%s"
   }
 }
 
