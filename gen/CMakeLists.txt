@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.0)
 
 
-project(TensorIR)
+project(TensorIR CXX CUDA)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 set(ENGINE_KIND CPU CACHE STRING "Use CPU or GPU")
-set(CMAKE_CXX_FLAGS "-fno-rtti")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda")
 
 find_package(MKLDNN REQUIRED)
 find_package(MPI REQUIRED)

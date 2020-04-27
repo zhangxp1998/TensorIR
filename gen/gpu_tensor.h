@@ -47,4 +47,18 @@ template <typename T> void fill(T *begin, T *end, T fillVal) {
     fill_kernel<<<numBlocks, blockSize>>>(begin, end, fillVal);
 }
 
+template <typename T, typename Callable> __global__ void transform_kernel(T *begin, T *end, Callable func) {
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for (auto i = begin + index; i < end; i += stride)
+    *i = func(*i);
+}
+
+template <typename T, typename Callable> void transform(T *begin, T *end, Callable func) {
+    size_t N = end - begin;
+    int blockSize = 256;
+    int numBlocks = (N + blockSize - 1) / blockSize;
+    transform_kernel<<<numBlocks, blockSize>>>(begin, end, func);
+}
+
 } // namespace gpu
