@@ -17,10 +17,6 @@ trait GPUTensorOps extends CPUTensorOps {
   class GPUTensor[A: Manifest : Ordering](override val dims: Seq[Int], override val allocType: AllocationType) extends
     Tensor[A](dims, allocType) {
     override lazy val memDesc: Rep[MemDesc] = createMemDesc(dims)
-
-    override def apply(idx: Int*): Rep[A] = {
-
-    }
   }
 }
 
@@ -29,7 +25,8 @@ object GPUTensorOps {
     val dslDriver = new GPUTensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = GPUTensor[Float](Seq(10), AllocationType.Data)
-        println(x)
+        x(Seq(0)) = 2.0f
+        println(x(0))
       }
     }
     dslDriver.eval("0")

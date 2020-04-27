@@ -1,5 +1,6 @@
 #include <cudnn.h>
 #include <stdlib.h>
+#include <cassert>
 
 #define checkCUDNN(expression)                                                 \
   {                                                                            \
@@ -12,15 +13,24 @@
   }
 
 namespace gpu {
-void *gpu_malloc(size_t size) {
+template <typename T>
+T *gpu_malloc(size_t size) {
   void *memory{nullptr};
-  cudaMalloc(&memory, size);
-  return memory;
+  auto error = cudaMalloc(&memory, size * sizeof(T));
+  assert(error == cudaSuccess);
+  return static_cast<T*>(memory);
 }
 
 template <typename T> T read_gpu_mem(T *gpu_mem, size_t idx) {
   T val{};
-  cudaMemcpy(&val, gpu_mem, sizeof(T), cudaMemcpyDeviceToHost);
+  auto error = cudaMemcpy(&val, gpu_mem, sizeof(T), cudaMemcpyDeviceToHost);
+  assert(error == cudaSuccess);
+  return val;
+}
+
+template <typename T> void write_gpu_mem(T *gpu_mem, size_t idx, T val) {
+  auto error = cudaMemcpy(gpu_mem, &val, sizeof(T), cudaMemcpyHostToDevice);
+  assert(error == cudaSuccess);
 }
 
 template <typename T> __global__ void fill(T *begin, T *end, T fillVal) {

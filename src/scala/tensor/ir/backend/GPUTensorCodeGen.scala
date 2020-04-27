@@ -22,12 +22,19 @@ trait GPUTensorCodeGen extends PrintfCodeGen {
   }
   override def shallow(node: Node): Unit = node match {
     case Node(_, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Const(_)::Nil, _) =>
-      emit(s"gpu::gpu_malloc(${dims.product}*sizeof(${remap(manifest)}))")
+      emit(s"gpu::gpu_malloc<${remap(manifest)}>(${dims.product})")
     case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) =>
       val sizes = dims.scanRight(1)(_ * _).tail
       emit(s"gpu::read_gpu_mem(")
       shallow(tensor)
       emit(s", ${idx.zip(sizes).map{case (a, b) => a*b}.sum})")
+    case Node(s, "tensor-update", List(_, tensor, Const(idx: Seq[Int]), newVal, Const(dims: Seq[Int])), _) =>
+      val sizes = dims.scanRight(1)(_ * _).tail
+      emit(s"gpu::write_gpu_mem(")
+      shallow(tensor)
+      emit(s", ${idx.zip(sizes).map{case (a, b) => a*b}.sum}, ")
+      shallow(newVal)
+      emit(")")
     case _ => super.shallow(node)
   }
 }
