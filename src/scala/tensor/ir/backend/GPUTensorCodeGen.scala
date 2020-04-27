@@ -35,6 +35,13 @@ trait GPUTensorCodeGen extends PrintfCodeGen {
       emit(s", ${idx.zip(sizes).map{case (a, b) => a*b}.sum}, ")
       shallow(newVal)
       emit(")")
+    case Node(_, "tensor-fill", List(mA, tensor, fillVal, Const(dims: Seq[Int])), _) =>
+      val totalSize = dims.product
+      emit("gpu::fill(")
+      shallow(tensor)
+      emit(", ")
+      shallow(tensor)
+      emit(s" + $totalSize, ${quote(fillVal)})")
     case _ => super.shallow(node)
   }
 }

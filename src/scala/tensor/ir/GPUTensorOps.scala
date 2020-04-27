@@ -25,7 +25,8 @@ object GPUTensorOps {
     val dslDriver = new GPUTensorDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = GPUTensor[Float](Seq(10), AllocationType.Data)
-        x(Seq(0)) = 2.0f
+        x.fill(10.0f)
+//        x(Seq(0)) = 2.0f
         println(x(0))
       }
     }

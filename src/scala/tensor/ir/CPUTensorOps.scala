@@ -73,9 +73,7 @@ trait CPUTensorOps extends Base with Equal with OrderingOps with PrimitiveOps wi
     }
     def fill[A: Manifest: Ordering](dims: Seq[Int], fillVal: A, allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
       val tensor = Tensor[A](dims, allocType)
-      val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(tensor.data), Unwrap(fillVal), Backend.Const(dims))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-fill", unwrapped_xs:_*)(Unwrap(tensor.data)))
+      tensor.fill(fillVal)
       tensor
     }
     def zero[A: Manifest: Ordering](dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {

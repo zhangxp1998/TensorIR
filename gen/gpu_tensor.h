@@ -33,10 +33,18 @@ template <typename T> void write_gpu_mem(T *gpu_mem, size_t idx, T val) {
   assert(error == cudaSuccess);
 }
 
-template <typename T> __global__ void fill(T *begin, T *end, T fillVal) {
+template <typename T> __global__ void fill_kernel(T *begin, T *end, T fillVal) {
   int index = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
-  for (auto i = begin; i < end; i += stride)
+  for (auto i = begin + index; i < end; i += stride)
     *i = fillVal;
 }
+
+template <typename T> void fill(T *begin, T *end, T fillVal) {
+    size_t N = end - begin;
+    int blockSize = 256;
+    int numBlocks = (N + blockSize - 1) / blockSize;
+    fill_kernel<<<numBlocks, blockSize>>>(begin, end, fillVal);
+}
+
 } // namespace gpu

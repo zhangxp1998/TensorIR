@@ -8,6 +8,7 @@ plan.csv
 requests.csv
 snippet
 snippet.cpp
+snippet.cu
 snippet.dSYM
 memory.z3
 gen/build
