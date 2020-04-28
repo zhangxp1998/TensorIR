@@ -20,6 +20,8 @@ add_library(GPU_Runtime gpu_tensor.h gpu_tensor.cpp)
 target_link_libraries(GPU_Runtime
 	PUBLIC
 	cudnn
+	PUBLIC
+	cublas
 )
 
 add_executable(snippet snippet.cpp)

@@ -206,7 +206,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       if (mA.toString != "Float") {
         throw new RuntimeException(s"Only floating point values are supported: ${mA.toString}")
       }
-      emit(s"sgemm('N', 'N', ")
+      emit(s"$sgemmFuncName('N', 'N', ")
       shallow(lhs)
       emit(", ")
       shallow(rhs)
@@ -366,6 +366,8 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
   }
   val transformFuncName = "std::transform"
   val fillFuncName = "std::fill"
+  // sgemm stands for Single Precision General Matrix Multiply
+  val sgemmFuncName = "sgemm"
   def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"std::plus<${remap(mA)}>()"
     case "-" => s"std::minus<${remap(mA)}>()"

@@ -13,6 +13,11 @@ trait GPUTensorOps extends CPUTensorOps {
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): GPUTensor[A] = {
       new GPUTensor[A](xs, allocType)
     }
+    def fill[A: Manifest: Ordering](dims: Seq[Int], fillVal: A, allocType: AllocationType): GPUTensor[A] = {
+      val tensor = new GPUTensor[A](dims, allocType)
+      tensor.fill(fillVal)
+      tensor
+    }
   }
   class GPUTensor[A: Manifest : Ordering](override val dims: Seq[Int], override val allocType: AllocationType) extends
     Tensor[A](dims, allocType) {
@@ -32,6 +37,10 @@ object GPUTensorOps {
         println(x(0))
         val z = x.add(y)
         println(z(0))
+        val a = GPUTensor.fill[Float](Seq(1, 10), 2, AllocationType.Data)
+        val b = GPUTensor.fill[Float](Seq(10, 1), 3, AllocationType.Data)
+        val c = a.matmul(b, None, AllocationType.Data)
+        println(c(0, 0))
       }
     }
     dslDriver.eval("0")

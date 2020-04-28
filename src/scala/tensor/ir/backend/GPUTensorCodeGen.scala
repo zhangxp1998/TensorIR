@@ -67,6 +67,7 @@ trait GPUTensorCodeGen extends CPUTensorCodeGen {
   }
   override val transformFuncName = "gpu::transform"
   override val fillFuncName = "gpu::fill"
+  override val sgemmFuncName = "gpu::sgemm"
   override def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"thrust::plus<${remap(mA)}>()"
     case "-" => s"thrust::minus<${remap(mA)}>()"
