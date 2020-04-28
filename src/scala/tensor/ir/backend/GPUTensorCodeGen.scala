@@ -8,17 +8,25 @@ import tensor.ir.{CPUTensorOps, GPUTensorOps, RandomOpsCodegen}
 
 import scala.tensor.ir.backend.CPUTensorCodeGen
 
-trait GPUTensorCodeGen extends PrintfCodeGen {
+trait GPUTensorCodeGen extends CPUTensorCodeGen {
 
   // GPU memory planning requires us to be aware of 2 heaps
   // TODO write a multi-heap memory planner
-  def memoryPlanning(g: Graph): Graph = {
+  override def memoryPlanning(g: Graph): Graph = {
     g
   }
 
-  registerHeader("\"gpu_tensor.h\"")
+  override def registerRuntimeLibHeaders(): Unit = {
+    registerHeader("\"gpu_tensor.h\"")
+  }
+
   registerTopLevelFunction("cleanup") {
     emitln("void cleanup() {}")
+  }
+  override def emitEngine(): Unit = {
+  }
+  override def emitStream(): Unit = {
+
   }
   override def shallow(node: Node): Unit = node match {
     case Node(_, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Const(_)::Nil, _) =>
@@ -35,13 +43,6 @@ trait GPUTensorCodeGen extends PrintfCodeGen {
       emit(s", ${idx.zip(sizes).map{case (a, b) => a*b}.sum}, ")
       shallow(newVal)
       emit(")")
-    case Node(_, "tensor-fill", List(mA, tensor, fillVal, Const(dims: Seq[Int])), _) =>
-      val totalSize = dims.product
-      emit("gpu::fill(")
-      shallow(tensor)
-      emit(", ")
-      shallow(tensor)
-      emit(s" + $totalSize, ${quote(fillVal)})")
     case Node(s, "tensor-transform-range", List(Const(mA: Manifest[_]), data, block: Block, begin, end), _) =>
       assert(block.in.length == 1)
       emit("gpu::transform(")
@@ -55,16 +56,6 @@ trait GPUTensorCodeGen extends PrintfCodeGen {
       emit(")")
       quoteBlockPReturn(traverse(block))
       emit(")")
-    case Node(s, "tensor-binary-transform-range", List(Const(mA: Manifest[_]), lhs, rhs, out, Const((begin: Int, end: Int)), Const(op: String)), _) =>
-      emit("gpu::transform(")
-      emitBeginEnd(lhs, Const(begin), Const(end))
-      emit(", ")
-      shallow(rhs)
-      emit(", ")
-      shallow(out)
-      emit(", ")
-      emit(getPrimitiveOpLambda(op, mA))
-      emit(")")
     case Node(_, "tensor-copy", List(Const(mA: Manifest[_]), tensor, Const(dims: Seq[Int]), Const(allocType)), _) =>
       val totalSize = dims.product
       emit(s"gpu::memdup<${remap(mA)}>(")
@@ -74,7 +65,9 @@ trait GPUTensorCodeGen extends PrintfCodeGen {
       emit(")")
     case _ => super.shallow(node)
   }
-  def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
+  override val transformFuncName = "gpu::transform"
+  override val fillFuncName = "gpu::fill"
+  override def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"thrust::plus<${remap(mA)}>()"
     case "-" => s"thrust::minus<${remap(mA)}>()"
     case "*" => s"thrust::multiplies<${remap(mA)}>()"

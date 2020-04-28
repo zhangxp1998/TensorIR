@@ -1,9 +1,12 @@
+#ifndef __GPU_TENSOR_H
+#define __GPU_TENSOR_H
 #include <cudnn.h>
 #include <stdlib.h>
 #include <cassert>
 #include <thrust/transform.h>
 #include <thrust/fill.h>
 #include <thrust/device_ptr.h>
+#include <cublas_v2.h>
 
 #define checkCUDNN(expression)                                                 \
   {                                                                            \
@@ -65,4 +68,16 @@ T *memdup(const T *src, size_t size) {
     return dst;
 }
 
+cublasHandle_t createCublasHandle();
+
+extern cublasHandle_t cublasHandle;
+
+// Expects data in row major format
+void sgemm(const char transA, const char transB, const float *a, const float *b,
+           float *c, const size_t M, const size_t K, const size_t N,
+           const float& alpha, const float& beta);
+
+
 } // namespace gpu
+
+#endif

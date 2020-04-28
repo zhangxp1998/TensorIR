@@ -84,35 +84,43 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     typeMap = transformer.newTypeMap
     newGraph
   }
+  def emitEngine(): Unit = {
+    emit("dnnl::engine eng{dnnl::engine::kind::cpu, 0};")
+  }
+  def emitStream(): Unit = {
+    emit("dnnl::stream stream(eng);")
+  }
+  def registerRuntimeLibHeaders(): Unit = {
+    registerHeader("\"tensor.h\"")
+  }
   doRename = false
   //  val _shouldInline = shouldInline
   var totalMemory: Int = 0
   var allocationPlan: Map[Int, MemoryBlock] = Map()
-  registerHeader("<string.h>", "<algorithm>")
-  registerHeader("\"tensor.h\"")
-  registerHeader("<sys/mman.h>", "<unistd.h>")
+  registerHeader("<string.h>", "<algorithm>", "<sys/mman.h>", "<unistd.h>")
+  registerRuntimeLibHeaders()
+//  registerHeader("<sys/mman.h>", "<unistd.h>": _*)
   registerDatastructures("heap") {
     emit("char *heap = NULL;")
   }
-  registerDatastructures("eng"){
-    emit("dnnl::engine eng{dnnl::engine::kind::cpu, 0};")
-  }
-  registerDatastructures("stream") {
-    emit("dnnl::stream stream(eng);")
-  }
+  registerDatastructures("engine")(emitEngine())
+  registerDatastructures("stream")(emitStream())
   registerInit("heap_init") {
     emit("heap = (char*)get_mem(1024UL*1024*1024*8);")
   }
-  registerTopLevelFunction("tensor_copy"){
-    emit(
-      """
-        |static void *memdup(void* source, size_t bytes) {
-        |   void *copy = malloc(bytes);
-        |   memcpy(copy, source, bytes);
-        |   return copy;
-        |}
-        |""".stripMargin)
+  def registerMemdup(): Unit = {
+    registerTopLevelFunction("tensor_copy"){
+      emit(
+        """
+          |static void *memdup(void* source, size_t bytes) {
+          |   void *copy = malloc(bytes);
+          |   memcpy(copy, source, bytes);
+          |   return copy;
+          |}
+          |""".stripMargin)
+    }
   }
+
   registerTopLevelFunction("get_mem") {
     emit(
       """
@@ -170,7 +178,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       shallow(newVal)
     case Node(s, "tensor-fill", List(mA, tensor, fillVal, Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
-      emit("std::fill(")
+      emit(s"$fillFuncName(")
       shallow(tensor)
       emit(", ")
       shallow(tensor)
@@ -178,6 +186,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
 
 
     case Node(s, "tensor-copy", List(mA, tensor, Const(dims: Seq[Int]), Const(allocType)), _) =>
+      registerMemdup()
       val manifest = mA match {case Const(mani: Manifest[_]) => mani}
       val totalSize = dims.product
       val byteSize = s"$totalSize * sizeof(${remap(manifest)})"
@@ -343,14 +352,8 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(", ")
       shallow(dst)
       emit(")")
-    case Node(s, "tensor-fill", List(mA, data, fillVal, Const(dims: Seq[Int])), _) =>
-      emit("std::fill(")
-      emitBeginEnd(data, Const(0), Const(dims.product))
-      emit(", ")
-      shallow(fillVal)
-      emit(")")
     case Node(s, "tensor-binary-transform-range", List(Const(mA: Manifest[_]), lhs, rhs, out, Const((begin: Int, end: Int)), Const(op: String)), _) =>
-      emit("std::transform(")
+      emit(s"$transformFuncName(")
       emitBeginEnd(lhs, Const(begin), Const(end))
       emit(", ")
       shallow(rhs)
@@ -361,6 +364,8 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(")")
     case _ => super.shallow(node)
   }
+  val transformFuncName = "std::transform"
+  val fillFuncName = "std::fill"
   def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"std::plus<${remap(mA)}>()"
     case "-" => s"std::minus<${remap(mA)}>()"
