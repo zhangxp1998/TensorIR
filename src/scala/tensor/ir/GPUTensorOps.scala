@@ -27,8 +27,11 @@ object GPUTensorOps {
         val x = GPUTensor[Float](Seq(10), AllocationType.Data)
         x.fill(10.0f)
         x.transform(x => x/2.0f)
-//        x(Seq(0)) = 2.0f
+        val y = GPUTensor[Float](Seq(10), AllocationType.Data)
+        y.fill(5.0f)
         println(x(0))
+        val z = x.add(y)
+        println(z(0))
       }
     }
     dslDriver.eval("0")

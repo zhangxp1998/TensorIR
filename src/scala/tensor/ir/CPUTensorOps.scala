@@ -171,6 +171,16 @@ trait CPUTensorOps extends Base with Equal with OrderingOps with PrimitiveOps wi
       val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Unwrap(idx), Unwrap(newVal))
       Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
     }
+    protected def transform[T: Manifest: Ordering](lhs: Rep[Array[T]], rhs: Rep[Array[T]], out: Rep[Array[T]], begin: Int, end: Int, op: String): Unit = {
+      val mA = Backend.Const(manifest[T])
+      Adapter.g.reflectEffect(
+        "tensor-binary-transform-range", mA, Unwrap(lhs), Unwrap(rhs), Unwrap(out), Backend.Const((begin, end)), Backend.Const(op)
+      )(
+        Unwrap(lhs), Unwrap(rhs)
+      )(
+        Unwrap(out)
+      )
+    }
     def mapInplace(f: Rep[A] => Rep[A]): Unit = {
       transformRange(0, totalSize, f)
     }
@@ -208,20 +218,14 @@ trait CPUTensorOps extends Base with Equal with OrderingOps with PrimitiveOps wi
         throw new RuntimeException(s"$rhs_dims is not the same as $dims")
       }
     }
-    private def tensor_binary(rhs: Tensor[A], op: String): Tensor[A] = {
+    protected def tensor_binary(rhs: Tensor[A], op: String): Tensor[A] = {
       checkDims(rhs.dims)
       val res = copy()
       res.tensor_binary_inplace(rhs, op)
       res
     }
-    private def tensor_binary_inplace(rhs: Tensor[A], op: String): Unit = {
-      mapInplaceWithFlatIdx(idx => {
-        val a: Rep[A] = unsafe_apply(idx)
-        val b: Rep[A] = rhs.unsafe_apply(idx)
-        val c: Rep[A] = Wrap[A](Adapter.g.reflect(op, Unwrap(a), Unwrap(b)))
-        c
-      }
-      )
+    protected def tensor_binary_inplace(rhs: Tensor[A], op: String): Unit = {
+      transform[A](this.data, rhs.data, this.data, 0, this.totalSize, op)
     }
 
     def add(rhs: Tensor[A]): Tensor[A] = {

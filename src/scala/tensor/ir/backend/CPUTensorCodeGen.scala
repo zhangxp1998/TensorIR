@@ -185,7 +185,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit("(memdup(")
       shallow(tensor)
       emit(", ")
-      emit(byteSize.toString)
+      emit(byteSize)
       emit(")))")
     case Node(s, "heap-offset-copy", Const(manifest: Manifest[_])::tensor::Const(blk: MemoryBlock)::Const(dims: Seq[Int])::_, eff) =>
       emit(s"((${remap(manifest)} *)memcpy(heap+${blk.begin}, ")
@@ -349,7 +349,26 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(", ")
       shallow(fillVal)
       emit(")")
+    case Node(s, "tensor-binary-transform-range", List(Const(mA: Manifest[_]), lhs, rhs, out, Const((begin: Int, end: Int)), Const(op: String)), _) =>
+      emit("std::transform(")
+      emitBeginEnd(lhs, Const(begin), Const(end))
+      emit(", ")
+      shallow(rhs)
+      emit(", ")
+      shallow(out)
+      emit(", ")
+      emit(getPrimitiveOpLambda(op, mA))
+      emit(")")
     case _ => super.shallow(node)
+  }
+  def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
+    case "+" => s"std::plus<${remap(mA)}>()"
+    case "-" => s"std::minus<${remap(mA)}>()"
+    case "*" => s"std::multiplies<${remap(mA)}>()"
+    case "/" => s"std::divides<${remap(mA)}>()"
+    case "%" => s"std::modulus<${remap(mA)}>()"
+    case "==" => s"std::equal_to<${remap(mA)}>()"
+    case "!=" => s"std::not_equal_to<${remap(mA)}>()"
   }
   def quote(s: String): String = {
     "\"" + s.replaceAllLiterally("\\", "\\\\") + "\""

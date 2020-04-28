@@ -55,7 +55,33 @@ trait GPUTensorCodeGen extends PrintfCodeGen {
       emit(")")
       quoteBlockPReturn(traverse(block))
       emit(")")
+    case Node(s, "tensor-binary-transform-range", List(Const(mA: Manifest[_]), lhs, rhs, out, Const((begin: Int, end: Int)), Const(op: String)), _) =>
+      emit("gpu::transform(")
+      emitBeginEnd(lhs, Const(begin), Const(end))
+      emit(", ")
+      shallow(rhs)
+      emit(", ")
+      shallow(out)
+      emit(", ")
+      emit(getPrimitiveOpLambda(op, mA))
+      emit(")")
+    case Node(_, "tensor-copy", List(Const(mA: Manifest[_]), tensor, Const(dims: Seq[Int]), Const(allocType)), _) =>
+      val totalSize = dims.product
+      emit(s"gpu::memdup<${remap(mA)}>(")
+      shallow(tensor)
+      emit(", ")
+      emit(totalSize.toString)
+      emit(")")
     case _ => super.shallow(node)
+  }
+  def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
+    case "+" => s"thrust::plus<${remap(mA)}>()"
+    case "-" => s"thrust::minus<${remap(mA)}>()"
+    case "*" => s"thrust::multiplies<${remap(mA)}>()"
+    case "/" => s"thrust::divides<${remap(mA)}>()"
+    case "%" => s"thrust::modulus<${remap(mA)}>()"
+    case "==" => s"thrust::equal_to<${remap(mA)}>()"
+    case "!=" => s"thrust::not_equal_to<${remap(mA)}>()"
   }
 }
 

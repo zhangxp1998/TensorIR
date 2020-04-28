@@ -52,4 +52,17 @@ template <typename T, typename Callable> void transform(T *begin, T *end, T *dst
     thrust::transform(thrust::device_ptr<T>(begin), thrust::device_ptr<T>(end), thrust::device_ptr<T>(dst), std::move(func));
 }
 
+template <typename T, typename Callable> void transform(T *begin, T *end, T* begin2, T *dst, Callable func) {
+    using thrust::device_ptr;
+    thrust::transform(device_ptr<T>(begin), device_ptr<T>(end), device_ptr<T>(begin2), device_ptr<T>(dst), std::move(func));
+}
+
+template <typename T>
+T *memdup(const T *src, size_t size) {
+    T* dst = gpu_malloc<T>(size);
+    auto error = cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToDevice);
+    assert(error == cudaSuccess);
+    return dst;
+}
+
 } // namespace gpu
