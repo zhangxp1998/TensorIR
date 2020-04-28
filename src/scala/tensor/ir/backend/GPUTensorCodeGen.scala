@@ -1,7 +1,7 @@
 package tensor.ir.backend
 
 import lms.core.{Backend, Graph}
-import lms.core.Backend.{Const, Node}
+import lms.core.Backend.{Block, Const, Node}
 import lms.core.stub.{DslDriverC, DslGenC}
 import lms.core.utils.time
 import tensor.ir.{CPUTensorOps, GPUTensorOps, RandomOpsCodegen}
@@ -42,6 +42,19 @@ trait GPUTensorCodeGen extends PrintfCodeGen {
       emit(", ")
       shallow(tensor)
       emit(s" + $totalSize, ${quote(fillVal)})")
+    case Node(s, "tensor-transform-range", List(Const(mA: Manifest[_]), data, block: Block, begin, end), _) =>
+      assert(block.in.length == 1)
+      emit("gpu::transform(")
+      emitBeginEnd(data, begin, end)
+      emit(", ")
+      shallow(data)
+      emit("+")
+      shallow(begin)
+      emit(s", [=] __device__ __host__ (${remap(mA)} ")
+      shallow(block.in.head)
+      emit(")")
+      quoteBlockPReturn(traverse(block))
+      emit(")")
     case _ => super.shallow(node)
   }
 }

@@ -5,6 +5,17 @@ import lms.core.Backend.{Const, Def, Exp, Node, Sym}
 import lms.core.stub.DslGenC
 
 trait PrintfCodeGen extends DslGenC {
+  def emitBeginEnd(data: Def, begin: Def, end: Def): Unit = {
+    shallow(data)
+    if (begin != Const(0)) {
+      emit("+")
+      shallow(begin)
+    }
+    emit(", ")
+    shallow(data)
+    emit("+")
+    shallow(end)
+  }
   override def shallow(n: Backend.Node): Unit = n match {
     case Node(s,"P",List(x),_) =>
       emit("""printf("""")

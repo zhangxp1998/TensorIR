@@ -1,6 +1,9 @@
 #include <cudnn.h>
 #include <stdlib.h>
 #include <cassert>
+#include <thrust/transform.h>
+#include <thrust/fill.h>
+#include <thrust/device_ptr.h>
 
 #define checkCUDNN(expression)                                                 \
   {                                                                            \
@@ -33,32 +36,20 @@ template <typename T> void write_gpu_mem(T *gpu_mem, size_t idx, T val) {
   assert(error == cudaSuccess);
 }
 
-template <typename T> __global__ void fill_kernel(T *begin, T *end, T fillVal) {
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  for (auto i = begin + index; i < end; i += stride)
-    *i = fillVal;
-}
+// template <typename T> __global__ void fill_kernel(T *begin, T *end, T fillVal) {
+//   int index = blockIdx.x * blockDim.x + threadIdx.x;
+//   int stride = blockDim.x * gridDim.x;
+//   for (auto i = begin + index; i < end; i += stride)
+//     *i = fillVal;
+// }
 
 template <typename T> void fill(T *begin, T *end, T fillVal) {
-    size_t N = end - begin;
-    int blockSize = 256;
-    int numBlocks = (N + blockSize - 1) / blockSize;
-    fill_kernel<<<numBlocks, blockSize>>>(begin, end, fillVal);
+    thrust::fill(thrust::device_ptr<T>(begin), thrust::device_ptr<T>(end), fillVal);
 }
 
-template <typename T, typename Callable> __global__ void transform_kernel(T *begin, T *end, Callable func) {
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  for (auto i = begin + index; i < end; i += stride)
-    *i = func(*i);
-}
 
-template <typename T, typename Callable> void transform(T *begin, T *end, Callable func) {
-    size_t N = end - begin;
-    int blockSize = 256;
-    int numBlocks = (N + blockSize - 1) / blockSize;
-    transform_kernel<<<numBlocks, blockSize>>>(begin, end, func);
+template <typename T, typename Callable> void transform(T *begin, T *end, T *dst, Callable func) {
+    thrust::transform(thrust::device_ptr<T>(begin), thrust::device_ptr<T>(end), thrust::device_ptr<T>(dst), std::move(func));
 }
 
 } // namespace gpu

@@ -351,17 +351,6 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(")")
     case _ => super.shallow(node)
   }
-  def emitBeginEnd(data: Def, begin: Def, end: Def): Unit = {
-    shallow(data)
-    if (begin != Const(0)) {
-      emit("+")
-      shallow(begin)
-    }
-    emit(", ")
-    shallow(data)
-    emit("+")
-    shallow(end)
-  }
   def quote(s: String): String = {
     "\"" + s.replaceAllLiterally("\\", "\\\\") + "\""
   }
