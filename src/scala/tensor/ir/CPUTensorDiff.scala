@@ -49,7 +49,7 @@ trait CPUTensorDiff extends CPUTensorOps {
       val z2 = new TensorR[Float](y, Tensor.zero[Float](x.dims, AllocationType.Gradient))
       reset({
         val res = f(z1, z2)
-        res.d = Tensor.fill[Float](res.x.dims, 1, AllocationType.Gradient)
+        res.d = Tensor.fill[Float](res.x.dims, 1.0f, AllocationType.Gradient)
       })
       (z1.d, z2.d)
     }
