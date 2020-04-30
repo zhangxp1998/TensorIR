@@ -4,11 +4,6 @@ import lms.core.Backend
 import lms.core.stub.{Adapter, Base}
 import scala.collection.mutable
 
-// A trait that maps to MPI_Comm in C code.
-trait MPI_Comm {
-
-}
-
 trait MPI extends Base {
   object MPI {
     val MPI_COMM_WORLD: Rep[MPI_Comm] = get_comm_world()
@@ -28,4 +23,10 @@ trait MPI extends Base {
       Adapter.g.reflectEffect("MPI_All_average", Unwrap(comm), unwrapped, Backend.Const(size), Unwrap(num_procs))(unwrapped)(unwrapped)
     }
   }
+}
+
+
+// A trait that maps to MPI_Comm in C code.
+trait MPI_Comm {
+
 }

@@ -8,10 +8,6 @@ import lms.macros.SourceContext
 
 import scala.collection.mutable
 
-// A type that maps to C++ std::uniform_real_distribution<> real_dis{a, b};
-trait UniformFloatDistribution {
-}
-
 trait RandomOps extends Base {
   val RAND = Backend.Const("random")
   def randInt(): Rep[Int] = {
@@ -62,4 +58,8 @@ trait RandomOpsCodegen extends CGenBase {
       emit("(rng)")
     case _ => super.shallow(n)
   }
+}
+
+// A type that maps to C++ std::uniform_real_distribution<> real_dis{a, b};
+trait UniformFloatDistribution {
 }
