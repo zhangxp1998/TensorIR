@@ -178,11 +178,13 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       shallow(newVal)
     case Node(s, "tensor-fill", List(Const(mA: Manifest[_]), tensor, fillVal, Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
-      emit(s"$fillFuncName<${remap(mA)}>(")
+      emit(s"$fillFuncName(")
       shallow(tensor)
       emit(", ")
       shallow(tensor)
-      emit(s" + $totalSize, ${quote(fillVal)})")
+      emit(s" + $totalSize, (${remap(mA)})(")
+      shallow(fillVal)
+      emit("))")
 
 
     case Node(s, "tensor-copy", List(mA, tensor, Const(dims: Seq[Int]), Const(allocType)), _) =>
