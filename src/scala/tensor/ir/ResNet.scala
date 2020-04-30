@@ -7,7 +7,7 @@ import scala.util.continuations.{cps, reset}
 object ResNet {
 
   def main(args: Array[String]) {
-    val dslDriver = new TensorDiffDriverC[String,Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         trait Layer extends Diff {
           def forward(x: TensorR[Float]): TensorR[Float]@diff

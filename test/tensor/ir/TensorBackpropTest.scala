@@ -6,7 +6,7 @@ import lms.macros.SourceContext
 class TensorBackpropTest extends FunSuite {
   test("softmax-backprop") {
     val rows = 10
-    val dslDriver = new TensorDiffDriverC[String, Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String, Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(rows, rows), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx % rows + 1)

@@ -3,9 +3,9 @@ package tensor.ir
 import org.scalatest.FunSuite
 import lms.macros.SourceContext
 
-class TensorDifferentiationTest extends FunSuite {
+class CPUTensorDiffTest extends FunSuite {
   test("add") {
-    val dslDriver = new TensorDiffDriverC[String,Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length), AllocationType.Data)
@@ -22,7 +22,7 @@ class TensorDifferentiationTest extends FunSuite {
   }
 
   test("sub") {
-    val dslDriver = new TensorDiffDriverC[String,Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length), AllocationType.Data)
@@ -40,7 +40,7 @@ class TensorDifferentiationTest extends FunSuite {
 
   test("mul") {
     val length = 20
-    val dslDriver = new TensorDiffDriverC[String,Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(length), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx)
@@ -62,7 +62,7 @@ class TensorDifferentiationTest extends FunSuite {
 
   test("div") {
     val length = 20
-    val dslDriver = new TensorDiffDriverC[String,Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val x = Tensor[Float](Seq(length), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx)
@@ -87,7 +87,7 @@ class TensorDifferentiationTest extends FunSuite {
   }
 
   test("composite") {
-    val dslDriver = new TensorDiffDriverC[String,Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String,Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
         val length = 20
         val x = Tensor[Float](Seq(length), AllocationType.Data)

@@ -15,7 +15,7 @@ trait Diff {
   type diff = cps[Unit]
 }
 
-trait TensorDifferentiation extends CPUTensorOps {
+trait CPUTensorDiff extends CPUTensorOps {
 
   object TensorR {
     def apply[T: Manifest: Numeric](dims: Seq[Int], fillVal: T): TensorR[T] = {
@@ -246,7 +246,7 @@ trait TensorDifferentiation extends CPUTensorOps {
   }
 }
 
-abstract class TensorDiffDriverC[A: Manifest, B: Manifest] extends TensorDriverC[A, B] with TensorDifferentiation { q =>
+abstract class CPUTensorDiffDriverC[A: Manifest, B: Manifest] extends TensorDriverC[A, B] with CPUTensorDiff { q =>
   override val codegen = new CPUDiffTensorCodeGen {
     override val IR: q.type = q
   }
@@ -307,9 +307,9 @@ class NumR(val x: Double, var d: Double) extends Diff {
 }
 
 
-object TensorDifferentiation {
+object CPUTensorDiff {
   def main(args: Array[String]): Unit = {
-    val dslDriver = new TensorDiffDriverC[String, Unit] {
+    val dslDriver = new CPUTensorDiffDriverC[String, Unit] {
       override def snippet(x: Rep[String]): Rep[Unit] = {
 
         def grad(f: TensorR[Float] => TensorR[Float]@cps[Unit])(x: Tensor[Float]): Tensor[Float] = {
