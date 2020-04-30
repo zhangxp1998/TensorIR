@@ -17,11 +17,21 @@ trait PrintfCodeGen extends DslGenC {
     shallow(end)
   }
   override def shallow(n: Backend.Node): Unit = n match {
-    case Node(s,"P",List(x),_) =>
+    case Node(s,"P", values ,_) =>
       emit("""printf("""")
-      emit(format(x))
+      values.zipWithIndex.foreach{ case (x: Def, idx: Int) =>
+        emit(format(x))
+        if (idx != values.length - 1) {
+          emit(" ")
+        }
+      }
       emit("""\n", """) // Should look like <BEGIN>\n", <END>
-      shallow(x)
+      values.zipWithIndex.foreach{ case (x: Def, idx: Int) =>
+        shallow(x)
+        if (idx != values.length - 1) {
+          emit(",")
+        }
+      }
       emit(")")
     case _ => super.shallow(n)
   }

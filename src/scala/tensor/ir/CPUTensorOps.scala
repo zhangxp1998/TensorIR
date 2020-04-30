@@ -6,7 +6,7 @@ import lms.core.stub._
 import lms.macros.SourceContext
 import scala.tensor.ir.backend.CPUTensorCodeGen
 
-trait CPUTensorOps extends Base with Equal with OrderingOps with PrimitiveOps with RandomOps {
+trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps with RandomOps {
   type AllocationType = AllocationType.AllocationType
   abstract class DataLoop {
     def foreach(f: Rep[Int] => Unit): Unit
