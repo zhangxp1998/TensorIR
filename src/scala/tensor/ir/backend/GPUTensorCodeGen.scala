@@ -6,9 +6,9 @@ import lms.core.stub.{DslDriverC, DslGenC}
 import lms.core.utils.time
 import tensor.ir.{CPUTensorOps, GPUTensorOps, RandomOpsCodegen}
 
-import scala.tensor.ir.backend.CPUTensorCodeGen
+import scala.tensor.ir.backend.CPUDiffTensorCodeGen
 
-trait GPUTensorCodeGen extends CPUTensorCodeGen {
+trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
 
   // GPU memory planning requires us to be aware of 2 heaps
   // TODO write a multi-heap memory planner
@@ -83,16 +83,6 @@ abstract class GPUTensorDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, 
   override val codegen = new GPUTensorCodeGen {
     override val IR: q.type = q
   }
-  override lazy val f: A => Stream[String] = {
-    // TBD: should read result of type B?
-    val outputBinPath = "gen/build/snippet_gpu"
-    val out = new java.io.PrintStream("gen/snippet.cu")
-    out.println(code)
-    out.close()
-    (new java.io.File(outputBinPath)).delete
-    import scala.sys.process._
-    time("cmake") { (s"cmake -Bgen/build -Sgen -DCMAKE_BUILD_TYPE=Debug": ProcessBuilder).lineStream.foreach(Console.println) }
-    time("clang++") { (s"cmake --build gen/build": ProcessBuilder).lineStream.foreach(Console.println) }
-    (a: A) => (s"$outputBinPath $a": ProcessBuilder).lineStream
-  }
+  override val outputSrcPath = "gen/snippet.cu"
+  override val outputBinPath = "gen/build/snippet_gpu"
 }

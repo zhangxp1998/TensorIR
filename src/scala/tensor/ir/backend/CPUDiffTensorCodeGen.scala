@@ -4,10 +4,16 @@ import lms.core.Backend
 import lms.core.Backend.{Const, Node}
 
 trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
-  registerHeader("\"tensor_diff.h\"")
-  override def shallow(n: Node): Unit = n match {
+  override def registerRuntimeLibHeaders(): Unit = {
+    super.registerRuntimeLibHeaders()
+    registerHeader("\"tensor_diff.h\"")
+  }
+  val backpropFuncNames = Map(
+    "matmul-backprop" -> "matmul_backprop"
+  )
+  override def shallow(node: Node): Unit = node match {
     case Node(s, "matmul-backprop", List(m1, m2, diff_dst, d1, d2, Const(Seq(m: Int, k: Int, n: Int))), _) =>
-      emit("matmul_backprop(")
+      emit(s"${backpropFuncNames(node.op)}(")
       shallow(m1)
       emit(", ")
       shallow(m2)
@@ -20,7 +26,7 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emit(s", $m, $k, $n)")
     case Node(s, "conv-backprop", List(x, kernel, output, d, kernelD, outputD, Const(Seq(padding: Int, stride: Int))), _) =>
       // TODO implement convolution backprop
-      emitStubComment(n.op)
+      emitStubComment(node.op)
     case Node(s, "batchNorm-backprop", List(Const(dims: Seq[Int]), src, diff_dst, avg, variance, diff_src, gamma_beta, diff_gama_beta), _) =>
       val Seq(n, c, h, w) = dims
       emit(s"batchnorm_backward<$n, $c, $h, $w>(eng, stream, ")
@@ -64,7 +70,7 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emit(", ")
       shallow(diff_src)
       emit(")")
-    case _ => super.shallow(n)
+    case _ => super.shallow(node)
   }
   def emitStubComment(op: String): Unit = emit(s"/*Stub for ${op}*/")
 }
