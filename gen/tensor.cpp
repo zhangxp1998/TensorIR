@@ -21,7 +21,8 @@ void sgemm(const char transA, const char transB, const float *a, const float *b,
   int64_t lda = tolower(transA) == 'n' ? K : M;
   int64_t ldb = tolower(transB) == 'n' ? N : K;
   int64_t ldc = N;
-  dnnl_sgemm(transA, transB, M, N, K, alpha, a, lda, b, ldb, beta, c, ldc);
+  auto error = dnnl_sgemm(transA, transB, M, N, K, alpha, a, lda, b, ldb, beta, c, ldc);
+  assert(error == dnnl_success);
 }
 
 
