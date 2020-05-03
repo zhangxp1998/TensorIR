@@ -140,7 +140,6 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
   val is_tensor_new_ops = Set("tensor-new", "heap-offset")
 
   override def remap(m: Manifest[_]): String = m.toString() match {
-    case s if s.contains("MemDims") => "dnnl::memory::dims"
     case s if s.contains("MemDesc") => "dnnl::memory"
     case _ => super.remap(m)
   }
@@ -178,7 +177,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       shallow(newVal)
     case Node(s, "tensor-fill", List(Const(mA: Manifest[_]), tensor, fillVal, Const(dims: Seq[Int])), _) =>
       val totalSize = dims.product
-      emit(s"$fillFuncName(")
+      emit(s"${forwardFuncNames(node.op)}(")
       shallow(tensor)
       emit(", ")
       shallow(tensor)
@@ -208,12 +207,8 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       if (mA.toString != "Float") {
         throw new RuntimeException(s"Only floating point values are supported: ${mA.toString}")
       }
-      emit(s"$sgemmFuncName('N', 'N', ")
-      shallow(lhs)
-      emit(", ")
-      shallow(rhs)
-      emit(", ")
-      shallow(result)
+      emit(s"${forwardFuncNames(node.op)}('N', 'N', ")
+      shallowParams(lhs, rhs, result)
       emit(s", $m, $k, $n, 1.0f, $beta)")
 
     case Node(s, "tensor-accumulate-range", List(Const(mA: Manifest[_]), data, begin, end), _) =>
@@ -270,15 +265,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       // TODO support custom epsilon
       val Seq(n, c, h, w) = dims
       emit(s"batchnorm_forward<$n, $c, $h, $w>(eng, stream, ")
-      shallow(src)
-      emit(", ")
-      shallow(avg)
-      emit(", ")
-      shallow(variance)
-      emit(", ")
-      shallow(gamma_beta)
-      emit(", ")
-      shallow(dst)
+      shallowParams(src, avg, variance, gamma_beta, dst)
       emit(")")
     case Node(s, "max", List(lhs, rhs), _) =>
       emit(s"std::max<${remap(typeMap(s))}>(")
@@ -306,16 +293,8 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(")")
     case Node(s, "tensor-convolution2d", List(mA, input, output, kernels, bias, Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride))), _) =>
       emit(s"conv2d_forward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
-      shallow(input)
-      emit(", ")
-      shallow(output)
-      emit(", ")
-      shallow(kernels)
-      emit(", ")
-      shallow(bias)
+      shallowParams(input, output, kernels, bias)
       emit(")")
-    case Node(s, "mem-dims", List(Backend.Const(dims: Seq[Int])), _) =>
-      emit(s"dnnl::memory::dims({${ dims.mkString(", ")} })")
     case Node(s, "tensor-fread", List(Const(mA: Manifest[_]), data, Const(path: String), Const(dims: Seq[Int]), Const(dtype: String), offset), _) =>
       emit(s"load_bin_convert<$dtype, ${remap(mA)}>(")
       shallow(data)
@@ -325,9 +304,9 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     case Node(s, "tensor-mmap", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), Const(path: String)), _) =>
       val elem_count = dims.product
       emit(s"mmap_file<${remap(mA)}>(${quote(path)}, $elem_count)")
-    case Node(s, "mem-desc", List(memDims, data, Const(dims: Seq[Int])), _) =>
+    case Node(s, "mem-desc", List(Const(mA: Manifest[_]), data, Const(dims: Seq[Int])), _) =>
       emit("dnnl::memory({")
-      shallow(memDims)
+      emit(s"dnnl::memory::dims({${dims.mkString(", ")}})")
       val format = dims.length match {
         case 1 => "a"
         case 2 => "ab"
@@ -355,7 +334,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       shallow(dst)
       emit(")")
     case Node(s, "tensor-binary-transform-range", List(Const(mA: Manifest[_]), lhs, rhs, out, Const((begin: Int, end: Int)), Const(op: String)), _) =>
-      emit(s"$transformFuncName(")
+      emit(s"${forwardFuncNames(node.op)}(")
       emitBeginEnd(lhs, Const(begin), Const(end))
       emit(", ")
       shallow(rhs)
@@ -366,10 +345,11 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(")")
     case _ => super.shallow(node)
   }
-  val transformFuncName = "std::transform"
-  val fillFuncName = "std::fill"
-  // sgemm stands for Single Precision General Matrix Multiply
-  val sgemmFuncName = "sgemm"
+  val forwardFuncNames = Map(
+    "matrix-multiply" -> "sgemm",
+    "tensor-fill" -> "std::fill",
+    "tensor-binary-transform-range" -> "std::transform",
+  )
   def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"std::plus<${remap(mA)}>()"
     case "-" => s"std::minus<${remap(mA)}>()"
@@ -381,6 +361,16 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
   }
   def quote(s: String): String = {
     "\"" + s.replaceAllLiterally("\\", "\\\\") + "\""
+  }
+  def shallowParams(params: Def*): Unit = {
+    if (params.isEmpty) {
+      return
+    }
+    shallow(params.head)
+    params.tail.foreach{p =>
+      emit(", ")
+      shallow(p)
+    }
   }
 }
 
