@@ -1,7 +1,7 @@
 package tensor.ir.backend
 
 import lms.core.{Backend, Graph}
-import lms.core.Backend.{Block, Const, Node}
+import lms.core.Backend.{Block, Const, Def, Node}
 import lms.core.stub.{DslDriverC, DslGenC}
 import lms.core.utils.time
 import tensor.ir.{CPUTensorOps, GPUTensorOps, RandomOpsCodegen}
@@ -63,11 +63,31 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
       emit(", ")
       emit(totalSize.toString)
       emit(")")
+    case Node(s, "tensor-convolution2d", List(mA, input, output, kernels, bias, Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride))), _) =>
+      emit(s"gpu::conv2d_forward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(gpu::cudnnHandle, ")
+      shallowParams(input, output, kernels, bias)
+      emit(")")
+    case Node(s, "mem-desc", List(Const(mA: Manifest[_]), data, Const(dims: Seq[Int])), _) =>
+      assert(dims.length <= 4, "Tensors with >4 dimensions are not supported")
+      // Padd dims with 1s if length less than 4
+      shallow(data)
+//      val padded = (dims ++ Seq(1, 1, 1, 1)).take(4)
+//      emit(s"gpu::createTensor4dDescriptor<${remap(mA)}>(${padded.mkString(",")})")
     case _ => super.shallow(node)
   }
-  override val transformFuncName = "gpu::transform"
-  override val fillFuncName = "gpu::fill"
-  override val sgemmFuncName = "gpu::sgemm"
+  override def remap(mA: Manifest[_]) = mA.toString match {
+    case s if s.contains("MemDesc") =>
+      assert(mA.typeArguments.length == 1, s"Expect MemDesc to have exactly 1 type parameter ${mA.typeArguments}")
+      remap(mA.typeArguments.head) + " *"
+    case _ => super.remap(mA)
+  }
+
+  override val forwardFuncNames = Map(
+    "matrix-multiply" -> "gpu::sgemm",
+    "tensor-fill" -> "gpu::fill",
+    "tensor-binary-transform-range" -> "gpu::transform",
+  )
+
   override def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"thrust::plus<${remap(mA)}>()"
     case "-" => s"thrust::minus<${remap(mA)}>()"
