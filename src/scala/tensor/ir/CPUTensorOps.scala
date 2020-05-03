@@ -121,7 +121,7 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
   class Tensor[A: Manifest: Ordering] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
     def createMemDesc(): Rep[MemDesc[A]] = {
       val mA = Backend.Const(manifest[A])
-      Wrap[MemDesc[A]](Adapter.g.reflect("mem-desc", mA, Unwrap(data), Backend.Const(dims)))
+      Wrap[MemDesc[A]](Adapter.g.reflectRead("mem-desc", mA, Unwrap(data), Backend.Const(dims))(Unwrap(data)))
     }
     lazy val memDesc: Rep[MemDesc[A]] = createMemDesc()
 
