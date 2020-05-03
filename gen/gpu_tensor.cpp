@@ -1,12 +1,30 @@
 #include "gpu_tensor.h"
 cublasHandle_t gpu::cublasHandle = gpu::createCublasHandle();
-
+cudnnHandle_t gpu::cudnnHandle = gpu::createCudnnHandle();
 
 cublasHandle_t gpu::createCublasHandle() {
-    cublasHandle_t handle;
+    cublasHandle_t handle{};
     auto error = cublasCreate(&handle);
     assert(CUBLAS_STATUS_SUCCESS == error);
     return handle;
+}
+
+cudnnHandle_t gpu::createCudnnHandle() {
+  cudnnHandle_t cudnn;
+  checkCUDNN(cudnnCreate(&cudnn));
+  return cudnn;
+}
+
+cudnnActivationDescriptor_t gpu::createActivationDescriptor(cudnnActivationMode_t activationMode, double coef) {
+  cudnnActivationDescriptor_t activation{};
+  checkCUDNN(cudnnCreateActivationDescriptor(&activation));
+  cudnnSetActivationDescriptor(activation, activationMode, CUDNN_PROPAGATE_NAN, coef);
+  return activation;
+}
+
+void gpu::gpu_free(void *p) {
+  auto error = cudaFree(p);
+  assert(error == cudaSuccess);
 }
 
 static void sgemm_column_major(const char transA, const char transB, const float *a, const float *b,
