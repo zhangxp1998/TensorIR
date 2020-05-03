@@ -22,6 +22,15 @@ cudnnActivationDescriptor_t gpu::createActivationDescriptor(cudnnActivationMode_
   return activation;
 }
 
+cudnnConvolutionFwdAlgo_t gpu::getConvolutionAlgo(cudnnHandle_t handle, cudnnTensorDescriptor_t input_descriptor, cudnnTensorDescriptor_t output_descriptor, cudnnFilterDescriptor_t kernel_descriptor, cudnnConvolutionDescriptor_t convolution_descriptor) {
+  static cudnnConvolutionFwdAlgo_t convolution_algorithm{};
+  checkCUDNN(cudnnGetConvolutionForwardAlgorithm(
+        handle, input_descriptor, kernel_descriptor, convolution_descriptor,
+        output_descriptor, CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
+        /*memoryLimitInBytes=*/0, &convolution_algorithm));
+  return convolution_algorithm;
+}
+
 void gpu::gpu_free(void *p) {
   auto error = cudaFree(p);
   assert(error == cudaSuccess);
