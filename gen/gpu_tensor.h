@@ -14,7 +14,7 @@
     if (status != CUDNN_STATUS_SUCCESS)                 \
     {                                                   \
       std::cerr << "Error on line " << __FILE__ << ":"  \
-                << __LINE__ <<  " "                     \
+                << __LINE__ << " "                      \
                 << cudnnGetErrorString(status) << "\n"; \
       assert(status == CUDNN_STATUS_SUCCESS);           \
     }                                                   \
@@ -131,12 +131,12 @@ cudnnTensorDescriptor_t createTensor4dDescriptor(size_t N, size_t C, size_t H, s
   cudnnTensorDescriptor_t tensor_descriptor{};
   checkCUDNN(cudnnCreateTensorDescriptor(&tensor_descriptor));
   checkCUDNN(cudnnSetTensor4dDescriptor(tensor_descriptor,
-                                       /*format=*/format,
-                                       /*dataType=*/get_cudnn_type<T>(),
-                                       /*batch_size=*/N,
-                                       /*channels=*/C,
-                                       /*image_height=*/H,
-                                       /*image_width=*/W));
+                                        /*format=*/format,
+                                        /*dataType=*/get_cudnn_type<T>(),
+                                        /*batch_size=*/N,
+                                        /*channels=*/C,
+                                        /*image_height=*/H,
+                                        /*image_width=*/W));
   return tensor_descriptor;
 }
 
@@ -148,29 +148,32 @@ cudnnTensorDescriptor_t getTensor4dDescriptor()
 }
 
 template <typename T, cudnnTensorFormat_t format = CUDNN_TENSOR_NCHW>
-cudnnFilterDescriptor_t createTensor4dFilterDescriptor(size_t N, size_t C, size_t H, size_t W) {
+cudnnFilterDescriptor_t createTensor4dFilterDescriptor(size_t N, size_t C, size_t H, size_t W)
+{
   cudnnFilterDescriptor_t kernel_descriptor{};
-    checkCUDNN(cudnnCreateFilterDescriptor(&kernel_descriptor));
-    checkCUDNN(cudnnSetFilter4dDescriptor(kernel_descriptor,
-                                          get_cudnn_type<T>(),
-                                          CUDNN_TENSOR_NCHW,
-                                          N,
-                                          C,
-                                          H,
-                                          W));
+  checkCUDNN(cudnnCreateFilterDescriptor(&kernel_descriptor));
+  checkCUDNN(cudnnSetFilter4dDescriptor(kernel_descriptor,
+                                        get_cudnn_type<T>(),
+                                        CUDNN_TENSOR_NCHW,
+                                        N,
+                                        C,
+                                        H,
+                                        W));
   return kernel_descriptor;
 }
 
 template <size_t N, size_t C, size_t H, size_t W, typename T, cudnnTensorFormat_t format = CUDNN_TENSOR_NCHW>
-cudnnFilterDescriptor_t getFilter4dDescriptor() {
+cudnnFilterDescriptor_t getFilter4dDescriptor()
+{
   static auto kernel_descriptor = createTensor4dFilterDescriptor<T, format>(N, C, H, W);
   return kernel_descriptor;
 }
 cudnnActivationDescriptor_t createActivationDescriptor(cudnnActivationMode_t activationMode, double coef);
 
 template <typename T>
-cudnnConvolutionDescriptor_t createConvolutionDescriptor(size_t padding, size_t stride) {
-    cudnnConvolutionDescriptor_t convolution_descriptor{};
+cudnnConvolutionDescriptor_t createConvolutionDescriptor(size_t padding, size_t stride)
+{
+  cudnnConvolutionDescriptor_t convolution_descriptor{};
   checkCUDNN(cudnnCreateConvolutionDescriptor(&convolution_descriptor));
   checkCUDNN(
       cudnnSetConvolution2dDescriptor(convolution_descriptor,
@@ -186,7 +189,8 @@ cudnnConvolutionDescriptor_t createConvolutionDescriptor(size_t padding, size_t 
 }
 
 template <size_t padding, size_t stride, typename T>
-cudnnConvolutionDescriptor_t getConvolutionDescriptor() {
+cudnnConvolutionDescriptor_t getConvolutionDescriptor()
+{
   static auto descriptor = createConvolutionDescriptor<T>(padding, stride);
   return descriptor;
 }
@@ -206,28 +210,28 @@ void conv2d_forward(cudnnHandle_t handle,
   static auto kernel_descriptor = getFilter4dDescriptor<OutChannels, C, KernelSize, KernelSize, T>();
   static auto convolution_descriptor = getConvolutionDescriptor<padding, stride, T>();
   static auto convolution_algorithm = getConvolutionAlgo(handle, input_descriptor, output_descriptor, kernel_descriptor, convolution_descriptor);
-    // Workspace size can't determined statically. For now we dynamically
-    // allocate workspaces.
+  // Workspace size can't determined statically. For now we dynamically
+  // allocate workspaces.
   static size_t workspace_bytes = [=]() -> size_t {
     size_t workspace_size = 0;
     checkCUDNN(cudnnGetConvolutionForwardWorkspaceSize(
         handle, input_descriptor, kernel_descriptor, convolution_descriptor,
         output_descriptor, convolution_algorithm, &workspace_size));
-        return workspace_size;
+    return workspace_size;
   }();
-    // std::cerr << "Workspace size: " << (workspace_bytes) << "B\n";
+  // std::cerr << "Workspace size: " << (workspace_bytes) << "B\n";
 
-    T* d_workspace = gpu_malloc<T>(workspace_bytes/sizeof(T));
-    const float alpha = 1.0f, beta = 0.0f;
-    // auto activation = createActivationDescriptor(CUDNN_ACTIVATION_TANH, 0.0);
-    // checkCUDNN(cudnnConvolutionBiasActivationForward(handle, &alpha, input_descriptor, input, kernel_descriptor, weights, convolution_descriptor, convolution_algorithm, d_workspace, workspace_bytes, &beta, output_descriptor, output, bias_descriptor, bias, activation, output_descriptor, output));
-    checkCUDNN(cudnnConvolutionForward(
-        handle, &alpha, input_descriptor, input, kernel_descriptor, weights,
-        convolution_descriptor, convolution_algorithm, d_workspace,
-        workspace_bytes, &beta, output_descriptor, output));
-    const float alpha2 = 1.0f;
-    checkCUDNN(cudnnAddTensor(handle, &alpha, bias_descriptor, bias, &alpha2, output_descriptor, output));
-    gpu_free(d_workspace);
+  T *d_workspace = gpu_malloc<T>(workspace_bytes / sizeof(T));
+  const float alpha = 1.0f, beta = 0.0f;
+  // auto activation = createActivationDescriptor(CUDNN_ACTIVATION_TANH, 0.0);
+  // checkCUDNN(cudnnConvolutionBiasActivationForward(handle, &alpha, input_descriptor, input, kernel_descriptor, weights, convolution_descriptor, convolution_algorithm, d_workspace, workspace_bytes, &beta, output_descriptor, output, bias_descriptor, bias, activation, output_descriptor, output));
+  checkCUDNN(cudnnConvolutionForward(
+      handle, &alpha, input_descriptor, input, kernel_descriptor, weights,
+      convolution_descriptor, convolution_algorithm, d_workspace,
+      workspace_bytes, &beta, output_descriptor, output));
+  const float alpha2 = 1.0f;
+  checkCUDNN(cudnnAddTensor(handle, &alpha, bias_descriptor, bias, &alpha2, output_descriptor, output));
+  gpu_free(d_workspace);
 }
 
 } // namespace gpu
