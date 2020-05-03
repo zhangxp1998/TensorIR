@@ -89,9 +89,6 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
     def createMemDims(dims: Seq[Int]): Rep[MemDims] = {
       Wrap[MemDims](Adapter.g.reflect("mem-dims", Backend.Const(dims)))
     }
-    def createMemDesc[A: Manifest: Ordering](memDims: Rep[MemDims], tensor: Tensor[A]): Rep[MemDesc] = {
-      Wrap[MemDesc](Adapter.g.reflect("mem-desc", Unwrap(memDims), Unwrap(tensor.data), Backend.Const(tensor.dims)))
-    }
     def copy[A: Manifest](src: Tensor[A], src_begin: Rep[Int], src_end: Rep[Int], dst_begin: Rep[Int], dst: Tensor[A]): Unit = {
       val mA = Backend.Const(manifest[A])
       Wrap[Unit](Adapter.g.reflectEffect(
@@ -122,9 +119,11 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
     }
   }
   class Tensor[A: Manifest: Ordering] (val dims: Seq[Int], var data: Rep[Array[A]], val allocType: AllocationType) {
-    lazy val memDims: Rep[MemDims] = Tensor.createMemDims(dims)
-    lazy val memDesc: Rep[MemDesc] = Tensor.createMemDesc(memDims, this)
-
+    def createMemDesc(): Rep[MemDesc[A]] = {
+      val mA = Backend.Const(manifest[A])
+      Wrap[MemDesc[A]](Adapter.g.reflect("mem-desc", mA, Unwrap(data), Backend.Const(dims)))
+    }
+    lazy val memDesc: Rep[MemDesc[A]] = createMemDesc()
 
     lazy val strides = dims.scanRight(1)(_ * _).tail
     lazy val totalSize = dims.product
@@ -548,7 +547,7 @@ object AllocationType extends Enumeration {
 trait MemDims {
 }
 // A trait that maps to dnnl::memory. It holds the data pointer, format, and memory dims at runtime.
-trait MemDesc {
+trait MemDesc[A] {
 }
 
 
