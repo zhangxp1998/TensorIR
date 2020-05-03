@@ -6,9 +6,6 @@ import lms.macros.SourceContext
 import tensor.ir.backend.GPUTensorDriverC
 
 trait GPUTensorOps extends CPUTensorDiff {
-  def createMemDesc(dims: Seq[Int]): Rep[MemDesc] = {
-    Wrap[MemDesc](Adapter.g.reflect("mem-desc", Backend.Const(dims)))
-  }
   object GPUTensor {
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): GPUTensor[A] = {
       new GPUTensor[A](xs, allocType)
@@ -21,7 +18,8 @@ trait GPUTensorOps extends CPUTensorDiff {
   }
   class GPUTensor[A: Manifest : Ordering](override val dims: Seq[Int], override val allocType: AllocationType) extends
     Tensor[A](dims, allocType) {
-    override lazy val memDesc: Rep[MemDesc] = createMemDesc(dims)
+    assert(dims.length <= 4, "Tensors with >4 dimensions are not supported")
+//    override lazy val memDesc: Rep[MemDesc] = createMemDesc[A](dims)
   }
 }
 
@@ -43,12 +41,16 @@ object GPUTensorOps {
         println(c(0, 0))
         b(Seq(2, 0)) = 20.0f
         b(Seq(3, 0)) = 30.0f
-//        a(Seq(0, 2)) = 4.0f
-//        a(Seq(0, 3)) = 5.0f
 
         val d = b.matmul(a, None, AllocationType.Data)
         println(b(2, 0)*a(0, 3), d(2, 3))
         println(b(3, 0)*a(0, 2), d(3, 2))
+
+        val input = GPUTensor[Float](Seq(32, 3, 28, 28), AllocationType.Data)
+        val kernel = GPUTensor[Float](Seq(3, 3, 3, 3), AllocationType.Parameter)
+        val bias = GPUTensor[Float](Seq(3), AllocationType.Parameter)
+        val output = input.conv2d(kernel, bias, 1, 1)
+        println(output(0, 0, 0, 0))
       }
     }
     dslDriver.eval("0")
