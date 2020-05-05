@@ -286,5 +286,15 @@ void sum_rows(T *mat, T *_vec) {
   
 }
 
+template <size_t N, size_t IC, typename T>
+void logsoftmax_forward(cudnnHandle_t handle,
+                        const T *src, T *dst) {
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  auto&& src_desc = getTensor4dDescriptor<N, IC, 1, 1, T>();
+  auto error = cudnnSoftmaxForward(handle, CUDNN_SOFTMAX_LOG, CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, src_desc, src, &beta, src_desc, dst);
+  checkCUDNN(error);
+}
+
 } // namespace gpu
 #endif
