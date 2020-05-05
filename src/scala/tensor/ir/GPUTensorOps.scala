@@ -65,11 +65,19 @@ object GPUTensorOps {
         val (dst, avg, variance) = x.batchNorm(gamma_beta)
         println(dst(0, 0, 0, 0), avg(0), variance(0))
       }
-      override def snippet(x: Rep[String]): Rep[Unit] = {
+      def sumRowsTest(): Unit = {
         val a = Tensor.fill[Float](Seq(6, 7), 1.0f, AllocationType.Data)
         val b = Tensor[Float](Seq(7), AllocationType.Data)
         a.sumRows(b)
         println(b(0), b(1), b(2))
+      }
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val rows = 10
+        val x = Tensor[Float](Seq(rows, rows), AllocationType.Data)
+        x.mapInplaceWithFlatIdx(idx => idx % rows + 1)
+        println(x(0, 0), x(0, 1), x(0, 2))
+        val y = x.logsoftmax()
+        println(y(0, 0), y(0, 1), y(0, 2))
       }
     }
     dslDriver.eval("0")
