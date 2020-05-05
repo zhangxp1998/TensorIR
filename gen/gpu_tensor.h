@@ -7,6 +7,7 @@
 #include <thrust/fill.h>
 #include <thrust/device_ptr.h>
 #include <cublas_v2.h>
+#include "tensor_constants.h"
 
 #define checkCUDNN(expression)                          \
   {                                                     \
@@ -232,6 +233,22 @@ void conv2d_forward(cudnnHandle_t handle,
   const float alpha2 = 1.0f;
   checkCUDNN(cudnnAddTensor(handle, &alpha, bias_descriptor, bias, &alpha2, output_descriptor, output));
   gpu_free(d_workspace);
+}
+
+template <size_t N, size_t C, size_t H, size_t W, typename T>
+void batchnorm_forward(cudnnHandle_t handle,
+                       const T *src, T *avg,
+                       T *variance,
+                       const T *scale_shift,
+                       T *dst, T *resultSaveMean, T *resultSaveInvVariance) {
+
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
+  auto dst_desc = getTensor4dDescriptor<N, C, H, W, T>();
+  auto scale_shift_desc = getTensor4dDescriptor<1, C, 1, 1, T>();
+  auto error = cudnnBatchNormalizationForwardTraining(handle, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta, src_desc, src, dst_desc, dst, scale_shift_desc, scale_shift, scale_shift + C, 0.5, avg, variance, EPSILON, resultSaveMean, resultSaveInvVariance);
+  checkCUDNN(error);
 }
 
 } // namespace gpu
