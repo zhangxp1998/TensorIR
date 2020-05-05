@@ -79,6 +79,25 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
       shallow(data)
 //      val padded = (dims ++ Seq(1, 1, 1, 1)).take(4)
 //      emit(s"gpu::createTensor4dDescriptor<${remap(mA)}>(${padded.mkString(",")})")
+    case Node(s, "logsoftmax-forward", List(src, dst, Const((rows, rowSize))), _) =>
+      emit(s"gpu::logsoftmax_forward<$rows, $rowSize>(gpu::cudnnHandle, ")
+      shallow(src)
+      emit(", ")
+      shallow(dst)
+      emit(")")
+    case Node(s, "tensor-transform-index", List(Const(mA: Manifest[_]), data, block: Block, Const(dims: Seq[Int])), _) =>
+      assert(block.in.length == 1)
+      val totalSize = dims.product
+      val counter = s"i${s.n}"
+      emit(s"thrust::transform(thrust::counting_iterator<int>(0), thrust::counting_iterator<int>($totalSize), ")
+      emit(s"thrust::device_ptr<${remap(mA)}>(")
+      shallow(data)
+
+      emit(s"), [=] __device__ __host__ (int ")
+      shallow(block.in.head)
+      emit(")")
+      quoteBlockPReturn(traverse(block))
+      emit(")")
     case _ => super.shallow(node)
   }
   override def remap(mA: Manifest[_]) = mA.toString match {
