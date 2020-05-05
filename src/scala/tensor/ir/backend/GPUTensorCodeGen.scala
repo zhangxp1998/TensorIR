@@ -67,6 +67,12 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
       emit(s"gpu::conv2d_forward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(gpu::cudnnHandle, ")
       shallowParams(input, output, kernels, bias)
       emit(")")
+    case Node(s, "batchnorm-forward", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), Const(epsilon: Float), src, avg, variance, gamma_beta, dst), _) =>
+      // TODO support custom epsilon
+      val Seq(n, c, h, w) = dims
+      emit(s"gpu::batchnorm_forward<$n, $c, $h, $w, ${remap(mA)}>(gpu::cudnnHandle, ")
+      shallowParams(src, avg, variance, gamma_beta, dst)
+      emit(", NULL, NULL)")
     case Node(s, "mem-desc", List(Const(mA: Manifest[_]), data, Const(dims: Seq[Int])), _) =>
       assert(dims.length <= 4, "Tensors with >4 dimensions are not supported")
       // Padd dims with 1s if length less than 4

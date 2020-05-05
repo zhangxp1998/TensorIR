@@ -261,7 +261,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(", ")
       shallow(dst)
       emit(")")
-    case Node(s, "batchnorm-forward", List(Const(dims: Seq[Int]), Const(epsilon: Float), src, avg, variance, gamma_beta, dst), _) =>
+    case Node(s, "batchnorm-forward", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), Const(epsilon: Float), src, avg, variance, gamma_beta, dst), _) =>
       // TODO support custom epsilon
       val Seq(n, c, h, w) = dims
       emit(s"batchnorm_forward<$n, $c, $h, $w>(eng, stream, ")

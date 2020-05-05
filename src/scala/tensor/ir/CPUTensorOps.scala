@@ -411,13 +411,14 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
       assert(dims.length == 4, "BatchNorm only supports 4d tensor")
       val Seq(n, c, h, w) = dims
       assert(gamma_beta.dims == Seq(2, c), s"Beta and Gamma should have dims ${Seq(2, c)}")
+      val mA = Backend.Const(manifest[A])
       val dst = Tensor[A](dims, AllocationType.Intermediate)
       val epsilon = 0.00001f
       val avg = Tensor[A](Seq(c), AllocationType.Intermediate)
       val variance = Tensor[A](Seq(c), AllocationType.Intermediate)
       Wrap[Unit](
         Adapter.g.reflectEffect(
-          "batchnorm-forward", Backend.Const(dims)+:Backend.Const(epsilon)+:Seq(this, avg, variance, gamma_beta, dst).map(a => Unwrap(a.memDesc)): _*
+          "batchnorm-forward", mA+:Backend.Const(dims)+:Backend.Const(epsilon)+:Seq(this, avg, variance, gamma_beta, dst).map(a => Unwrap(a.memDesc)): _*
         )(
           Unwrap(data), Unwrap(gamma_beta.data)
         )(
