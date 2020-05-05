@@ -26,15 +26,17 @@ trait GPUTensorOps extends CPUTensorDiff {
 object GPUTensorOps {
   def main(args: Array[String]): Unit = {
     val dslDriver = new GPUTensorDriverC[String,Unit] {
-      override def snippet(x: Rep[String]): Rep[Unit] = {
-        val x = GPUTensor[Float](Seq(10), AllocationType.Data)
-        x.fill(10.0f)
-        x.transform(x => x/2.0f)
-        val y = GPUTensor[Float](Seq(10), AllocationType.Data)
-        y.fill(5.0f)
-        println(x(0))
-        val z = x.add(y)
-        println(z(0))
+      def convTest(): Unit = {
+        val input = GPUTensor[Float](Seq(32, 3, 28, 28), AllocationType.Data)
+        val kernel = GPUTensor[Float](Seq(3, 3, 3, 3), AllocationType.Parameter)
+        val bias = GPUTensor[Float](Seq(3), AllocationType.Parameter)
+        input.fill(1.0f)
+        kernel.fill(0.1f)
+        bias.fill(2.0f)
+        val output = input.conv2d(kernel, bias, 1, 1)
+        println(output(0, 0, 0, 0))
+      }
+      def matmulTest(): Unit = {
         val a = GPUTensor.fill[Float](Seq(1, 10), 2, AllocationType.Data)
         val b = GPUTensor.fill[Float](Seq(10, 1), 3, AllocationType.Data)
         val c = a.matmul(b, None, AllocationType.Data)
@@ -45,12 +47,24 @@ object GPUTensorOps {
         val d = b.matmul(a, None, AllocationType.Data)
         println(b(2, 0)*a(0, 3), d(2, 3))
         println(b(3, 0)*a(0, 2), d(3, 2))
+      }
+      def basicOpsTest(): Unit = {
+        val x = GPUTensor[Float](Seq(10), AllocationType.Data)
+        x.fill(10.0f)
+        x.transform(x => x/2.0f)
+        val y = GPUTensor[Float](Seq(10), AllocationType.Data)
+        y.fill(5.0f)
+        println(x(0))
+        val z = x.add(y)
+        println(z(0))
 
-        val input = GPUTensor[Float](Seq(32, 3, 28, 28), AllocationType.Data)
-        val kernel = GPUTensor[Float](Seq(3, 3, 3, 3), AllocationType.Parameter)
-        val bias = GPUTensor[Float](Seq(3), AllocationType.Parameter)
-        val output = input.conv2d(kernel, bias, 1, 1)
-        println(output(0, 0, 0, 0))
+      }
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val x = Tensor[Float](Seq(32, 3, 28, 28), AllocationType.Data)
+        x.fill(0.0f)
+        val gamma_beta = Tensor.fill[Float](Seq(2, 3), 1.0f, AllocationType.Data)
+        val (dst, avg, variance) = x.batchNorm(gamma_beta)
+        println(dst(0, 0, 0, 0), avg(0), variance(0))
       }
     }
     dslDriver.eval("0")
