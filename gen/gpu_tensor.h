@@ -7,6 +7,12 @@
 #include <thrust/fill.h>
 #include <thrust/device_ptr.h>
 #include <cublas_v2.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/generate.h>
+#include <thrust/reduce.h>
+#include <thrust/functional.h>
+
 #include "tensor_constants.h"
 
 #define checkCUDNN(expression)                          \
@@ -249,6 +255,35 @@ void batchnorm_forward(cudnnHandle_t handle,
   auto scale_shift_desc = getTensor4dDescriptor<1, C, 1, 1, T>();
   auto error = cudnnBatchNormalizationForwardTraining(handle, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta, src_desc, src, dst_desc, dst, scale_shift_desc, scale_shift, scale_shift + C, 0.5, avg, variance, EPSILON, resultSaveMean, resultSaveInvVariance);
   checkCUDNN(error);
+}
+
+// convert a linear index to a row index
+template <typename T>
+struct sum_functor
+{
+  int R;
+  int C;
+  T *arr;
+
+  sum_functor(int _R, int _C, T *_arr) : R(_R), C(_C), arr(_arr) {};
+
+  __host__ __device__
+  T operator()(int myC){
+    T sum = 0;
+      for (int i = 0; i < R; i++) sum += arr[i*C+myC];
+    return sum;
+    }
+};
+
+
+// mat should be a rows x cols matrix, vec should be a cols vector.
+// Compute the sum of rows of the matrix, store it in vec
+template <size_t R, size_t C, typename T>
+void sum_rows(T *mat, T *_vec) {
+  static_assert(C > 0, "The matrix should be a wellformed 2D matrix");
+  thrust::device_ptr<T> vec{_vec};
+  thrust::transform(vec, vec+C, vec, sum_functor<T>(R, C, mat));
+  
 }
 
 } // namespace gpu
