@@ -328,7 +328,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     case Node(s, "tensor-sum-rows", List(src, dst, Const(dims: Seq[Int])), _) =>
       val ROWS = dims.head
       val COLS = dims.tail.product
-      emit(s"sum_rows<$ROWS, $COLS>(")
+      emit(s"${forwardFuncNames(node.op)}<$ROWS, $COLS>(")
       shallow(src)
       emit(", ")
       shallow(dst)
@@ -349,6 +349,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     "matrix-multiply" -> "sgemm",
     "tensor-fill" -> "std::fill",
     "tensor-binary-transform-range" -> "std::transform",
+    "tensor-sum-rows" -> "sum_rows"
   )
   def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"std::plus<${remap(mA)}>()"

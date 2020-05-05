@@ -92,6 +92,7 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
     "matrix-multiply" -> "gpu::sgemm",
     "tensor-fill" -> "gpu::fill",
     "tensor-binary-transform-range" -> "gpu::transform",
+    "tensor-sum-rows" -> "gpu::sum_rows",
   )
 
   override def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
