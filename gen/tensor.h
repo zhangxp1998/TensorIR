@@ -191,7 +191,7 @@ template <typename DataType> void mmap_file(const char *path, size_t size) {
 // mat should be a rows x cols matrix, vec should be a cols vector.
 // Compute the sum of rows of the matrix, store it in vec
 template <size_t rows, size_t cols>
-void sum_rows(float *mat, float *vec) {
+void sum_rows(const float *mat, float *vec) {
   static_assert(cols > 0, "The matrix should be a wellformed 2D matrix");
   if (cols == 1) {
     *vec = std::accumulate(vec, vec + cols, 0);
