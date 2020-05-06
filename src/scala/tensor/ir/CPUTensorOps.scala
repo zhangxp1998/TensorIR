@@ -54,12 +54,13 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
       case _ => (probs.dims.head, probs.dims.product/probs.dims.head)
     }
     assert(labels.dims.head == rows, s"Labels should have same head dimension with data: ${rows}, ${labels.dims.head}")
-    Wrap[A](Adapter.g.reflectRead(
+    val loss = Wrap[A](Adapter.g.reflectRead(
       "tensor-nll-loss", mA, Backend.Const((rows, rowSize)), Unwrap(probs.data), Unwrap(labels.data)
     )(
       Unwrap(probs.data), Unwrap(labels.data)
     )
     )
+    infix_/(loss, rows)
   }
   object Tensor {
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
