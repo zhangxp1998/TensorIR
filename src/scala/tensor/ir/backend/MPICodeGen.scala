@@ -11,6 +11,18 @@ trait MPICodeGen extends DslGenC {
     registerInit("MPI") {
       emitln("MPI_Init(pargc, pargv);")
     }
+    registerDatastructures("MPI") {
+      emitln(
+        """
+          |struct MPI_OBJ {
+          |  MPI_OBJ(){}
+          |  ~MPI_OBJ() {
+          |    MPI_Finalize();
+          |  }
+          |};
+          |MPI_OBJ mpi_singleton{};
+          |""".stripMargin)
+    }
     registerHeader("\"mpi_helper.h\"")
   }
   override def remap(m: Manifest[_]): String = m.toString match {

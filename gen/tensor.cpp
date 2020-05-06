@@ -24,9 +24,3 @@ void sgemm(const char transA, const char transB, const float *a, const float *b,
   auto error = dnnl_sgemm(transA, transB, M, N, K, alpha, a, lda, b, ldb, beta, c, ldc);
   assert(error == dnnl_success);
 }
-
-
-void cleanup() noexcept {
-  MPI_Finalize();
-  std::cerr << "Time spent in MPI calls: " << mpi_duration.count() << "ms\n";
-}
