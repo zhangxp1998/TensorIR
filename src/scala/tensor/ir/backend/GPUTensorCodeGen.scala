@@ -113,6 +113,7 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
     "tensor-binary-transform-range" -> "gpu::transform",
     "tensor-sum-rows" -> "gpu::sum_rows",
     "tensor-nll-loss" -> "gpu::nll_loss",
+    "nll-loss-backward" -> "gpu::nll_loss_backward",
   )
 
   override def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {

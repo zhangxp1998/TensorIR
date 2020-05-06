@@ -347,6 +347,10 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(s"${forwardFuncNames(node.op)}<$rows, $rowSize, ${remap(mA)}>(")
       shallowParams(probs, labels)
       emit(")")
+    case Node(s, "nll-loss-backward", List(Const(mA: Manifest[_]), Const((rows: Int, rowSize: Int)), diff_dst, labels, diff_src), _ ) =>
+      emit(s"${forwardFuncNames(node.op)}<$rows, $rowSize, ${remap(mA)}>(")
+      shallowParams(diff_dst, labels, diff_src)
+      emit(")")
     case _ => super.shallow(node)
   }
   val forwardFuncNames = Map(
@@ -355,6 +359,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     "tensor-binary-transform-range" -> "std::transform",
     "tensor-sum-rows" -> "sum_rows",
     "tensor-nll-loss" -> "nll_loss",
+    "nll-loss-backward" -> "nll_loss_backward",
   )
   def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"std::plus<${remap(mA)}>()"
