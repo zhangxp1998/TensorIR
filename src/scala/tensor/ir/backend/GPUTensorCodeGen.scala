@@ -10,12 +10,6 @@ import scala.tensor.ir.backend.CPUDiffTensorCodeGen
 
 trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
 
-  // GPU memory planning requires us to be aware of 2 heaps
-  // TODO write a multi-heap memory planner
-  override def memoryPlanning(g: Graph): Graph = {
-    g
-  }
-
   override def registerRuntimeLibHeaders(): Unit = {
     registerHeader("\"gpu_tensor.h\"")
   }
@@ -26,7 +20,14 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
   override def emitEngine(): Unit = {
   }
   override def emitStream(): Unit = {
-
+  }
+  override def initHeap(memUsedInBytes: Long): Unit = {
+    registerDatastructures("heap") {
+      emit("char *heap = NULL;")
+    }
+    registerInit("heap_init") {
+      emit(s"heap = (char*)gpu::gpu_malloc<char>(${memUsedInBytes}ull);")
+    }
   }
   override def shallow(node: Node): Unit = node match {
     case Node(_, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Const(_)::Nil, _) =>
@@ -114,6 +115,7 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
     "tensor-sum-rows" -> "gpu::sum_rows",
     "tensor-nll-loss" -> "gpu::nll_loss",
     "nll-loss-backward" -> "gpu::nll_loss_backward",
+    "heap-offset-copy" -> "gpu::memcpy",
   )
 
   override def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {

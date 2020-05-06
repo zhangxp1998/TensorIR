@@ -82,6 +82,8 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     val transformer = new CPUMemoryPlanningTransformer(allocationPlan.toMap, traverser.reusedSyms.toMap)
     val newGraph = transformer.transform(g)
     typeMap = transformer.newTypeMap
+    val lastBlk = allocationPlan.values.maxBy(b => b.begin + b.size)
+    initHeap(lastBlk.begin + lastBlk.size)
     newGraph
   }
   def emitEngine(): Unit = {
@@ -93,21 +95,22 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
   def registerRuntimeLibHeaders(): Unit = {
     registerHeader("\"tensor.h\"")
   }
+  def initHeap(memUsedInBytes: Long): Unit = {
+    registerDatastructures("heap") {
+      emit("char *heap = NULL;")
+    }
+    registerInit("heap_init") {
+      emit(s"heap = (char*)get_mem(${memUsedInBytes}ull);")
+    }
+  }
   doRename = false
   //  val _shouldInline = shouldInline
   var totalMemory: Int = 0
   var allocationPlan: Map[Int, MemoryBlock] = Map()
   registerHeader("<string.h>", "<algorithm>", "<sys/mman.h>", "<unistd.h>")
   registerRuntimeLibHeaders()
-//  registerHeader("<sys/mman.h>", "<unistd.h>": _*)
-  registerDatastructures("heap") {
-    emit("char *heap = NULL;")
-  }
   registerDatastructures("engine")(emitEngine())
   registerDatastructures("stream")(emitStream())
-  registerInit("heap_init") {
-    emit("heap = (char*)get_mem(1024UL*1024*1024*8);")
-  }
   def registerMemdup(): Unit = {
     registerTopLevelFunction("tensor_copy"){
       emit(
@@ -198,7 +201,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(byteSize)
       emit(")))")
     case Node(s, "heap-offset-copy", Const(manifest: Manifest[_])::tensor::Const(blk: MemoryBlock)::Const(dims: Seq[Int])::_, eff) =>
-      emit(s"((${remap(manifest)} *)memcpy(heap+${blk.begin}, ")
+      emit(s"((${remap(manifest)} *)${forwardFuncNames(node.op)}(heap+${blk.begin}, ")
       shallow(tensor)
       val byteSize = s"${dims.product} * sizeof(${remap(manifest)})"
       emit(s", $byteSize))")
@@ -360,6 +363,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     "tensor-sum-rows" -> "sum_rows",
     "tensor-nll-loss" -> "nll_loss",
     "nll-loss-backward" -> "nll_loss_backward",
+    "heap-offset-copy" -> "memcpy",
   )
   def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"std::plus<${remap(mA)}>()"
