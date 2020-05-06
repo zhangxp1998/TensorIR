@@ -75,9 +75,11 @@ object GPUTensorOps {
         val rows = 10
         val x = Tensor[Float](Seq(rows, rows), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx % rows + 1)
+        val labels = Tensor[Int](Seq(rows), AllocationType.Data)
+        labels.mapInplaceWithFlatIdx(idx => idx % rows)
         println(x(0, 0), x(0, 1), x(0, 2))
-        val y = x.logsoftmax()
-        println(y(0, 0), y(0, 1), y(0, 2))
+        val loss = x.softmaxLoss(labels)
+        println(loss)
       }
     }
     dslDriver.eval("0")
