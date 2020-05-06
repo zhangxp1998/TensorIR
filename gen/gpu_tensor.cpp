@@ -79,3 +79,9 @@ void gpu::matmul_backprop(const float *m1, const float *m2, const float *y,
   gpu::sgemm('N', 'T', y, m2, d1, M, N, K, 1.0f, 1.0f);
   gpu::sgemm('T', 'N', m1, y, d2, K, M, N, 1.0f, 1.0f);
 }
+
+void *gpu::memcpy(void *dest, const void *src, size_t n) {
+  auto error = cudaMemcpy(dest, src, n, cudaMemcpyDefault);
+  assert(error == cudaSuccess);
+  return dest;
+}

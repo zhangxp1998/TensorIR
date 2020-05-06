@@ -57,6 +57,8 @@ void write_gpu_mem(T *gpu_mem, size_t idx, T val)
   assert(error == cudaSuccess);
 }
 
+void *memcpy(void *dest, const void *src, size_t n);
+
 template <typename T>
 void fill(T *begin, T *end, T fillVal)
 {
@@ -301,7 +303,7 @@ template <size_t N, size_t IC, typename T, typename Idx>
 T nll_loss(const T *src, const Idx *label) {
   auto losses = thrust::make_transform_iterator(
     thrust::counting_iterator<int>(0), 
-    [src, label]__host__ __device__(int idx) -> T& { return src[idx * IC + label[idx]]; }
+    [src, label]__host__ __device__(int idx) -> const T& { return src[idx * IC + label[idx]]; }
     );
   auto ret = thrust::reduce(thrust::device, losses, losses+N);
   return -ret;
