@@ -209,7 +209,7 @@ template <size_t N, size_t IC, typename T, typename Idx>
 T nll_loss(const T *src, const Idx *label) {
   T sum{0};
   for (size_t i = 0; i < N; i ++) {
-    sum += src[i*IC + label[i]];
+    sum -= src[i*IC + label[i]];
   }
   return sum;
 }
