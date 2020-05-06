@@ -12,6 +12,7 @@
 #include <thrust/generate.h>
 #include <thrust/reduce.h>
 #include <thrust/functional.h>
+#include <thrust/execution_policy.h>
 
 #include "tensor_constants.h"
 
@@ -294,6 +295,14 @@ void logsoftmax_forward(cudnnHandle_t handle,
   auto&& src_desc = getTensor4dDescriptor<N, IC, 1, 1, T>();
   auto error = cudnnSoftmaxForward(handle, CUDNN_SOFTMAX_LOG, CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, src_desc, src, &beta, src_desc, dst);
   checkCUDNN(error);
+}
+
+template <size_t N, size_t IC, typename T, typename Idx>
+T nll_loss(const T *src, const Idx *label) {
+  auto losses = thrust::make_transform_iterator(thrust::counting_iterator<int>(0), [src, label]__host__ __device__(int idx) { return src[idx * IC + label[idx]]; });
+  auto ret = thrust::reduce(thrust::device, losses, losses+N);
+
+  return ret;
 }
 
 } // namespace gpu

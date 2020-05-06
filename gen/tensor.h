@@ -205,6 +205,15 @@ void sum_rows(const float *mat, float *vec) {
   }
 }
 
+template <size_t N, size_t IC, typename T, typename Idx>
+T nll_loss(const T *src, const Idx *label) {
+  T sum{0};
+  for (size_t i = 0; i < N; i ++) {
+    sum += src[i*IC + label[i]];
+  }
+  return sum;
+}
+
 void sgemm(const char transA, const char transB, const float *a, const float *b,
            float *c, const size_t M, const size_t K, const size_t N,
            float alpha, float beta);
