@@ -48,19 +48,18 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
   }
   def __softmaxLoss[A: Manifest: Ordering](probs: Tensor[A], labels: Tensor[Int]): Rep[A] = {
     assert(labels.dims.length == 1, s"Label should be a 1D Tensor ${labels.dims}")
+    val mA = Backend.Const(manifest[A])
     val (rows, rowSize) = probs.dims.length match {
       case 1 => (1, probs.dims.head)
       case _ => (probs.dims.head, probs.dims.product/probs.dims.head)
     }
     assert(labels.dims.head == rows, s"Labels should have same head dimension with data: ${rows}, ${labels.dims.head}")
-    val sum: Var[A] = var_new[A](0.asInstanceOf[A])
-    for (i <- DataLoop(rows)) {
-      val begin = i*rowSize
-      val y = probs.unsafe_apply((begin + labels.unsafe_apply(i)))
-      __assign(sum, infix_-(readVar(sum), y))
-    }
-
-    Wrap[A](Adapter.g.reflect("/", Unwrap(readVar(sum)), Backend.Const(rows.asInstanceOf[A])))
+    Wrap[A](Adapter.g.reflectRead(
+      "tensor-nll-loss", mA, Backend.Const((rows, rowSize)), Unwrap(probs.data), Unwrap(labels.data)
+    )(
+      Unwrap(probs.data), Unwrap(labels.data)
+    )
+    )
   }
   object Tensor {
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
