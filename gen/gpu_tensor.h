@@ -302,7 +302,7 @@ T nll_loss(const T *src, const Idx *label) {
   auto losses = thrust::make_transform_iterator(thrust::counting_iterator<int>(0), [src, label]__host__ __device__(int idx) { return src[idx * IC + label[idx]]; });
   auto ret = thrust::reduce(thrust::device, losses, losses+N);
 
-  return ret;
+  return -ret;
 }
 
 } // namespace gpu
