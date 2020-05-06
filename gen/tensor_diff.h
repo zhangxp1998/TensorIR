@@ -163,4 +163,12 @@ void logsoftmax_backward(const dnnl::engine &engine, dnnl::stream &stream,
                              });
 }
 
+template <size_t N, size_t IC, typename T, typename Idx>
+void nll_loss_backward(const T *diff_dst, const Idx *label, T *diff_src) {
+  const auto gradient = - (*diff_dst)/N;
+  for (size_t i = 0; i < N; i ++) {
+      diff_src[i * IC + label[i]] = gradient;
+  }
+}
+
 #endif

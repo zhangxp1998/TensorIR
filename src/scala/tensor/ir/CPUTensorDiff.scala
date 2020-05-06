@@ -229,12 +229,15 @@ trait CPUTensorDiff extends CPUTensorOps {
         case 1 => (1, d.dims.head)
         case _ => (d.dims.head, d.dims.product/d.dims.head)
       }
-      for (i <- 0 until rows: Rep[Range]) {
-        val idx = i * rowSize + labels.unsafe_apply(i)
-        diff_dst.unsafe_update(idx, (-1.0f/rows).asInstanceOf[A])
-      }
-      val d_dst = res.d.unsafe_apply(0)
-      d.transform(a => infix_*(a, d_dst))
+      val mA = Backend.Const(manifest[A])
+      Adapter.g.reflectEffect(
+        "nll-loss-backward", mA, Backend.Const((rows, rowSize)), Unwrap(res.d.data), Unwrap(labels.data), Unwrap(diff_dst.data)
+      )(
+        Unwrap(res.d.data), Unwrap(labels.data)
+      )(
+        Unwrap(diff_dst.data)
+      )
+
       Wrap[Unit](Adapter.g.reflectEffect(
         "logsoftmax-backward", Seq(diff_dst, probs, d).map(a => Unwrap(a.memDesc)) :+ Backend.Const((rows, rowSize)): _*
       )(

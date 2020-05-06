@@ -60,7 +60,7 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
       Unwrap(probs.data), Unwrap(labels.data)
     )
     )
-    infix_/(loss, rows)
+    infix_/(loss, rows.asInstanceOf[A])
   }
   object Tensor {
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {

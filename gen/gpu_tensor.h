@@ -299,10 +299,21 @@ void logsoftmax_forward(cudnnHandle_t handle,
 
 template <size_t N, size_t IC, typename T, typename Idx>
 T nll_loss(const T *src, const Idx *label) {
-  auto losses = thrust::make_transform_iterator(thrust::counting_iterator<int>(0), [src, label]__host__ __device__(int idx) { return src[idx * IC + label[idx]]; });
+  auto losses = thrust::make_transform_iterator(
+    thrust::counting_iterator<int>(0), 
+    [src, label]__host__ __device__(int idx) -> T& { return src[idx * IC + label[idx]]; }
+    );
   auto ret = thrust::reduce(thrust::device, losses, losses+N);
-
   return -ret;
+}
+
+template <size_t N, size_t IC, typename T, typename Idx>
+void nll_loss_backward(const T *diff_dst, const Idx *label, T *diff_src) {
+  auto losses = thrust::make_transform_iterator(
+    thrust::counting_iterator<int>(0), 
+    [diff_src, label] __host__ __device__(int idx) -> T& { return diff_src[idx * IC + label[idx]]; }
+    );
+  thrust::fill(thrust::device, losses, losses+N, - (*diff_dst)/N);
 }
 
 } // namespace gpu
