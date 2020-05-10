@@ -3,7 +3,7 @@ package tensor.ir
 import lms.core.Backend
 import lms.core.stub.Adapter
 import lms.macros.SourceContext
-import tensor.ir.backend.GPUTensorDriverC
+import tensor.ir.backend.{GPUTensorDiffDriverC, GPUTensorDriverC}
 
 trait GPUTensorOps extends CPUTensorDiff {
   object GPUTensor {
@@ -25,7 +25,7 @@ trait GPUTensorOps extends CPUTensorDiff {
 
 object GPUTensorOps {
   def main(args: Array[String]): Unit = {
-    val dslDriver = new GPUTensorDriverC[String,Unit] {
+    val dslDriver = new GPUTensorDiffDriverC[String,Unit] {
       def convTest(): Unit = {
         val input = GPUTensor[Float](Seq(32, 3, 28, 28), AllocationType.Data)
         val kernel = GPUTensor[Float](Seq(3, 3, 3, 3), AllocationType.Parameter)
@@ -71,7 +71,7 @@ object GPUTensorOps {
         a.sumRows(b)
         println(b(0), b(1), b(2))
       }
-      override def snippet(x: Rep[String]): Rep[Unit] = {
+      def softmaxLossTest(): Unit = {
         val rows = 10
         val x = Tensor[Float](Seq(rows, rows), AllocationType.Data)
         x.mapInplaceWithFlatIdx(idx => idx % rows + 1)
@@ -80,6 +80,13 @@ object GPUTensorOps {
         println(x(0, 0), x(0, 1), x(0, 2))
         val loss = x.softmaxLoss(labels)
         println(loss)
+      }
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val C = 3
+        val x = Tensor.fill[Float](Seq(32, C, 16, 16), 3.0f, AllocationType.Data)
+        val gamma_beta = Tensor.fill[Float](Seq(2, C), 1.0f, AllocationType.Data)
+        val (dsrc, dparam) = TensorR.grad((src, param) => src.batchNorm(param))(x, gamma_beta)
+        println(dparam(0, 0), dparam(1, 0))
       }
     }
     dslDriver.eval("0")
