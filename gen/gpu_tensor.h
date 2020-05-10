@@ -315,7 +315,7 @@ void nll_loss_backward(const T *diff_dst, const Idx *label, T *diff_src) {
     thrust::counting_iterator<int>(0), 
     [diff_src, label] __host__ __device__(int idx) -> T& { return diff_src[idx * IC + label[idx]]; }
     );
-  thrust::fill(thrust::device, losses, losses+N, - (*diff_dst)/N);
+  thrust::transform(thrust::device, losses, losses+N, losses, []__host__ __device__(T t) { return t -(*diff_dst)/N; });
 }
 
 template <size_t N, size_t C, size_t H, size_t W, typename T>
@@ -327,7 +327,7 @@ void batchnorm_backward(cudnnHandle_t handle,
                         T *diff_gamma_beta,
                         T *resultSaveMean, T *resultSaveInvVariance) {
   const float alpha = 1.0f;
-  const float beta = 0.0f;
+  const float beta = 1.0f;
   auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
   auto scale_shift_desc = getTensor4dDescriptor<1, C, 1, 1, T>();
   auto error = cudnnBatchNormalizationBackward(handle, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta, &alpha, &beta, src_desc, src, src_desc, diff_dst, src_desc, diff_src, scale_shift_desc, gamma_beta, diff_gamma_beta, diff_gamma_beta+C, EPSILON, resultSaveMean, resultSaveInvVariance);
