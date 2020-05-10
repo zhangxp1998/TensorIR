@@ -222,7 +222,7 @@ void conv2d_forward(cudnnHandle_t handle,
   static auto convolution_algorithm = getConvolutionAlgo(handle, input_descriptor, output_descriptor, kernel_descriptor, convolution_descriptor);
   // Workspace size can't determined statically. For now we dynamically
   // allocate workspaces.
-  static size_t workspace_bytes = [=]() -> size_t {
+  static const size_t workspace_bytes = [=]() -> size_t {
     size_t workspace_size = 0;
     checkCUDNN(cudnnGetConvolutionForwardWorkspaceSize(
         handle, input_descriptor, kernel_descriptor, convolution_descriptor,
@@ -331,6 +331,32 @@ void batchnorm_backward(cudnnHandle_t handle,
   auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
   auto scale_shift_desc = getTensor4dDescriptor<1, C, 1, 1, T>();
   auto error = cudnnBatchNormalizationBackward(handle, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta, &alpha, &beta, src_desc, src, src_desc, diff_dst, src_desc, diff_src, scale_shift_desc, gamma_beta, diff_gamma_beta, diff_gamma_beta+C, EPSILON, resultSaveMean, resultSaveInvVariance);
+  checkCUDNN(error);
+}
+
+cudnnConvolutionBwdDataAlgo_t getConvolutionBackwardAlgorithm(cudnnHandle_t handle) {
+  
+}
+
+template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
+          size_t padding, size_t stride, typename T>
+void convolution_backward(cudnnHandle_t handle,
+                          const T *diff_dst, const T *src,
+                          T *diff_weights,
+                          T *diff_bias) {
+  const float alpha = 1.0f;
+  const float beta = 1.0f;
+  auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
+  auto dst_desc = getTensor4dDescriptor<N, OC, H, W, T>();
+  auto conv_desc = getConvolutionDescriptor<padding, stride, T>();
+  auto kernel_descriptor = getFilter4dDescriptor<OutChannels, C, KernelSize, KernelSize, T>();
+  auto bias_descriptor = getTensor4dDescriptor<1, OutChannels, 1, 1, T>();
+  // cudnnConvolutionBwdDataAlgo_t algorithm{};
+  // cudnnGetConvolutionBackwardDataAlgorithm(handle, kernel_descriptor, dst_desc, conv_desc, src_desc, CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST, 0, algorithm);
+
+  auto error = cudnnConvolutionBackwardFilter(handle, &alpha, src_desc, src, dst_desc, diff_dst, conv_desc, CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1, NULL, 0, &beta, kernel_descriptor, diff_weights);
+  checkCUDNN(error);
+  error = cudnnConvolutionBackwardBias(handle, &alpha, dst_desc, diff_dst, &beta, bias_descriptor, diff_bias);
   checkCUDNN(error);
 }
 
