@@ -18,6 +18,10 @@ trait GPUDiffTensorCodeGen extends GPUTensorCodeGen {
       emit(s"gpu::batchnorm_backward<$n, $c, $h, $w, ${remap(mA)}>(gpu::cudnnHandle, ")
       shallowParams(src, diff_src, diff_dst, avg, variance, gamma_beta, diff_gama_beta)
       emit(", NULL, NULL)")
+    case Node(s, "conv2d-backprop", List(Const(mA: Manifest[_]), Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride)), diff_dst, src, diff_weight, diff_bias), _) =>
+      emit(s"gpu::convolution_backward<$n, $c, $h, $w, $oc, $kh, $padding, $stride, ${remap(mA)}>(gpu::cudnnHandle, ")
+      shallowParams(diff_dst, src, diff_weight, diff_bias)
+      emit(")")
     case _ => super.shallow(node)
   }
 }

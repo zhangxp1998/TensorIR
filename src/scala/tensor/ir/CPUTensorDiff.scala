@@ -165,8 +165,9 @@ trait CPUTensorDiff extends CPUTensorOps {
       val outputSize = x.getConv2dOutputSize(ic, oc, kh, padding, stride)
       val y = new TensorR(x.conv2d(that.x, bias.x, padding, stride), Tensor.zero[A](outputSize, AllocationType.Intermediate))
       k(y)
+      val mA = Backend.Const(manifest[A])
       Wrap[Unit](Adapter.g.reflectEffect(
-        "conv2d-backprop", Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, x, that.d, bias.d).map(a => Unwrap(a.memDesc)): _*
+        "conv2d-backprop", mA +: Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, x, that.d, bias.d).map(a => Unwrap(a.memDesc)): _*
       )(
         Unwrap(y.d.data), Unwrap(x.data)
       )(

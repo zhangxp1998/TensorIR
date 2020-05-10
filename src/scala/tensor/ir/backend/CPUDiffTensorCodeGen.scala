@@ -24,7 +24,7 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emit(s"batchnorm_backward<$n, $c, $h, $w>(eng, stream, ")
       shallowParams(src, diff_src, diff_dst, avg, variance, gamma_beta, diff_gama_beta)
       emit(")")
-    case Node(s, "conv2d-backprop", List(Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride)), diff_dst, src, diff_weight, diff_bias), _) =>
+    case Node(s, "conv2d-backprop", List(Const(mA: Manifest[_]), Const(Seq(n, c, h, w)), Const(Seq(oc, kh, padding, stride)), diff_dst, src, diff_weight, diff_bias), _) =>
       emit(s"convolution_backward<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
       shallowParams(diff_dst, src, diff_weight, diff_bias)
       emit(")")
