@@ -18,8 +18,8 @@ trait Diff {
 trait CPUTensorDiff extends CPUTensorOps {
 
   object TensorR {
-    def apply[T: Manifest: Numeric](dims: Seq[Int], fillVal: T): TensorR[T] = {
-      val tensor = Tensor.fill[T](dims, fillVal, AllocationType.Intermediate)
+    def apply[T: Manifest: Numeric](dims: Seq[Int], fillVal: T, allocType: AllocationType = AllocationType.Intermediate): TensorR[T] = {
+      val tensor = Tensor.fill[T](dims, fillVal, allocType)
       TensorR(tensor)
     }
     def apply[T: Manifest: Numeric](x: Tensor[T]): TensorR[T] = {
