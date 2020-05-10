@@ -1,6 +1,7 @@
 package tensor.ir.backend
 
 import lms.core.Backend
+import lms.core.Backend.{Const, Node}
 import lms.core.stub.{DslDriverC, DslExp}
 import tensor.ir.{GPUTensorDiff, GPUTensorOps}
 
@@ -10,6 +11,15 @@ trait GPUDiffTensorCodeGen extends GPUTensorCodeGen {
   override val backpropFuncNames = Map(
     "matmul-backprop" -> "gpu::matmul_backprop"
   )
+
+  override def shallow(node: Backend.Node): Unit = node match {
+    case Node(s, "batchNorm-backprop", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), src, diff_dst, avg, variance, diff_src, gamma_beta, diff_gama_beta), _) =>
+      val Seq(n, c, h, w) = dims
+      emit(s"gpu::batchnorm_backward<$n, $c, $h, $w, ${remap(mA)}>(gpu::cudnnHandle, ")
+      shallowParams(src, diff_src, diff_dst, avg, variance, gamma_beta, diff_gama_beta)
+      emit(", NULL, NULL)")
+    case _ => super.shallow(node)
+  }
 }
 
 abstract class GPUTensorDiffDriverC[A: Manifest, B: Manifest] extends DslDriverC[A, B] with GPUTensorDiff { q =>

@@ -19,7 +19,7 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
     case Node(s, "conv-backprop", List(x, kernel, output, d, kernelD, outputD, Const(Seq(padding: Int, stride: Int))), _) =>
       // TODO implement convolution backprop
       emitStubComment(node.op)
-    case Node(s, "batchNorm-backprop", List(Const(dims: Seq[Int]), src, diff_dst, avg, variance, diff_src, gamma_beta, diff_gama_beta), _) =>
+    case Node(s, "batchNorm-backprop", List(Const(mA: Manifest[_]), Const(dims: Seq[Int]), src, diff_dst, avg, variance, diff_src, gamma_beta, diff_gama_beta), _) =>
       val Seq(n, c, h, w) = dims
       emit(s"batchnorm_backward<$n, $c, $h, $w>(eng, stream, ")
       shallowParams(src, diff_src, diff_dst, avg, variance, gamma_beta, diff_gama_beta)
