@@ -24,3 +24,10 @@ void sgemm(const char transA, const char transB, const float *a, const float *b,
   auto error = dnnl_sgemm(transA, transB, M, N, K, alpha, a, lda, b, ldb, beta, c, ldc);
   assert(error == dnnl_success);
 }
+
+std::mt19937& getRandEngine() {
+  static std::random_device rd;
+  static const auto seed = rd();
+  static std::mt19937 rng{seed};
+  return rng;
+}

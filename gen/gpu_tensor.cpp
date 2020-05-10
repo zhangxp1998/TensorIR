@@ -1,6 +1,20 @@
 #include "gpu_tensor.h"
 cublasHandle_t gpu::cublasHandle = gpu::createCublasHandle();
 cudnnHandle_t gpu::cudnnHandle = gpu::createCudnnHandle();
+curandGenerator_t gpu::gen = gpu::createCudaRandGenerator();
+
+
+curandGenerator_t gpu::createCudaRandGenerator() {
+  curandGenerator_t gen;
+  /* Create pseudo-random number generator */
+  CURAND_CALL(curandCreateGenerator(&gen, 
+              CURAND_RNG_PSEUDO_DEFAULT));
+  
+  /* Set seed */
+  CURAND_CALL(curandSetPseudoRandomGeneratorSeed(gen, 
+              1234ULL));
+  return gen;
+}
 
 cublasHandle_t gpu::createCublasHandle()
 {
@@ -27,12 +41,24 @@ cudnnActivationDescriptor_t gpu::createActivationDescriptor(cudnnActivationMode_
 
 cudnnConvolutionFwdAlgo_t gpu::getConvolutionAlgo(cudnnHandle_t handle, cudnnTensorDescriptor_t input_descriptor, cudnnTensorDescriptor_t output_descriptor, cudnnFilterDescriptor_t kernel_descriptor, cudnnConvolutionDescriptor_t convolution_descriptor)
 {
-  static cudnnConvolutionFwdAlgo_t convolution_algorithm{};
+  cudnnConvolutionFwdAlgo_t convolution_algorithm{};
   checkCUDNN(cudnnGetConvolutionForwardAlgorithm(
       handle, input_descriptor, kernel_descriptor, convolution_descriptor,
       output_descriptor, CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
       /*memoryLimitInBytes=*/0, &convolution_algorithm));
   return convolution_algorithm;
+}
+
+cudnnConvolutionBwdFilterAlgo_t gpu::getConvolutionBwdFilterAlgo(cudnnHandle_t handle, cudnnTensorDescriptor_t src_desc, cudnnTensorDescriptor_t dst_desc, cudnnConvolutionDescriptor_t conv_desc, cudnnFilterDescriptor_t weight_desc) {
+  cudnnConvolutionBwdFilterAlgo_t algo{};
+  checkCUDNN(cudnnGetConvolutionBackwardFilterAlgorithm(handle, src_desc, dst_desc, conv_desc, weight_desc, CUDNN_CONVOLUTION_BWD_FILTER_NO_WORKSPACE, 0, &algo));
+  return algo;
+}
+
+cudnnConvolutionBwdDataAlgo_t gpu::getConvolutionBwdDataAlgo(cudnnHandle_t handle, cudnnTensorDescriptor_t src_desc, cudnnTensorDescriptor_t dst_desc, cudnnConvolutionDescriptor_t conv_desc, cudnnFilterDescriptor_t weight_desc) {
+  cudnnConvolutionBwdDataAlgo_t algo{};
+  cudnnGetConvolutionBackwardDataAlgorithm(handle, weight_desc, dst_desc, conv_desc, src_desc, CUDNN_CONVOLUTION_BWD_DATA_NO_WORKSPACE, 0, &algo);
+  return algo;
 }
 
 void gpu::gpu_free(void *p)

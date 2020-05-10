@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <numeric>
 #include <cassert>
+#include <random>
 
 template <size_t N, size_t C, size_t H, size_t W, size_t OutChannels,
           size_t KernelSize, size_t padding, size_t stride>
@@ -165,7 +166,7 @@ void load_bin_convert(DataType *data, const char *path, size_t elem_count, size_
   }
   assert(elem_count <= bytes / sizeof(FileType));
   FileType *file = static_cast<FileType *>(p);
-  for (size_t i = offsetElems; i < elem_count; i++) {
+  for (size_t i = offsetElems; i < offsetElems + elem_count; i++) {
     data[i] = static_cast<DataType>(file[i]);
   }
   munmap(file, bytes);
@@ -211,7 +212,18 @@ T nll_loss(const T *src, const Idx *label) {
   for (size_t i = 0; i < N; i ++) {
     sum -= src[i*IC + label[i]];
   }
-  return sum;
+  return sum/N;
+}
+
+std::mt19937& getRandEngine();
+
+template <size_t n>
+void tensorFillUniform(float *tensor, float lower, float upper) {
+  auto&& rng = getRandEngine();
+  std::uniform_real_distribution<float> x7 = std::uniform_real_distribution<float>{lower, upper};
+  std::transform(tensor, tensor+n, tensor, [&] (float x9) mutable {
+    return x7(rng);
+  });
 }
 
 void sgemm(const char transA, const char transB, const float *a, const float *b,

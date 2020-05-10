@@ -13,6 +13,12 @@
 #include <thrust/reduce.h>
 #include <thrust/functional.h>
 #include <thrust/execution_policy.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <curand.h>
 
 #include "tensor_constants.h"
 
@@ -28,6 +34,10 @@
     }                                                   \
   }
 
+#define CURAND_CALL(x) do { auto error = (x); if((error)!=CURAND_STATUS_SUCCESS) { \
+    printf("Error at %s:%d\n",__FILE__,__LINE__);\
+    assert(error == CURAND_STATUS_SUCCESS);}} while(0)
+
 namespace gpu
 {
 template <typename T>
@@ -42,7 +52,7 @@ T *gpu_malloc(size_t size)
 void gpu_free(void *p);
 
 template <typename T>
-T read_gpu_mem(T *gpu_mem, size_t idx)
+T read_gpu_mem(const T *gpu_mem, size_t idx)
 {
   T val{};
   auto error = cudaMemcpy(&val, gpu_mem + idx, sizeof(T), cudaMemcpyDeviceToHost);
@@ -206,6 +216,8 @@ cudnnConvolutionDescriptor_t getConvolutionDescriptor()
 }
 
 cudnnConvolutionFwdAlgo_t getConvolutionAlgo(cudnnHandle_t handle, cudnnTensorDescriptor_t input_descriptor, cudnnTensorDescriptor_t output_descriptor, cudnnFilterDescriptor_t kernel_descriptor, cudnnConvolutionDescriptor_t convolution_descriptor);
+cudnnConvolutionBwdFilterAlgo_t getConvolutionBwdFilterAlgo(cudnnHandle_t handle, cudnnTensorDescriptor_t src_desc, cudnnTensorDescriptor_t dst_desc, cudnnConvolutionDescriptor_t conv_desc, cudnnFilterDescriptor_t weight_desc);
+cudnnConvolutionBwdDataAlgo_t getConvolutionBwdDataAlgo(cudnnHandle_t handle, cudnnTensorDescriptor_t src_desc, cudnnTensorDescriptor_t dst_desc, cudnnConvolutionDescriptor_t conv_desc, cudnnFilterDescriptor_t weight_desc);
 
 template <size_t N, size_t C, size_t H, size_t W, size_t OutChannels,
           size_t KernelSize, size_t padding, size_t stride, typename T>
@@ -214,8 +226,11 @@ void conv2d_forward(cudnnHandle_t handle,
                     const T *weights, const T *bias)
 {
 
+  constexpr auto OutH = static_cast<long long>((H + 2 * padding - KernelSize + 1) / stride);
+  constexpr auto OutW = static_cast<long long>((W + 2 * padding - KernelSize + 1) / stride);
+
   static auto input_descriptor = getTensor4dDescriptor<N, C, H, W, T>();
-  static auto output_descriptor = getTensor4dDescriptor<N, OutChannels, H, W, T>();
+  static auto output_descriptor = getTensor4dDescriptor<N, OutChannels, OutH, OutW, T>();
   static auto bias_descriptor = getTensor4dDescriptor<1, OutChannels, 1, 1, T>();
   static auto kernel_descriptor = getFilter4dDescriptor<OutChannels, C, KernelSize, KernelSize, T>();
   static auto convolution_descriptor = getConvolutionDescriptor<padding, stride, T>();
@@ -306,7 +321,7 @@ T nll_loss(const T *src, const Idx *label) {
     [src, label]__host__ __device__(int idx) -> const T& { return src[idx * IC + label[idx]]; }
     );
   auto ret = thrust::reduce(thrust::device, losses, losses+N);
-  return -ret;
+  return -ret/N;
 }
 
 template <size_t N, size_t IC, typename T, typename Idx>
@@ -315,7 +330,8 @@ void nll_loss_backward(const T *diff_dst, const Idx *label, T *diff_src) {
     thrust::counting_iterator<int>(0), 
     [diff_src, label] __host__ __device__(int idx) -> T& { return diff_src[idx * IC + label[idx]]; }
     );
-  thrust::transform(thrust::device, losses, losses+N, losses, [=]__host__ __device__(T t) { return t -(*diff_dst)/N; });
+  const auto gradient = -read_gpu_mem<T>(diff_dst, 0)/N;
+  thrust::fill(thrust::device, losses, losses+N, gradient);
 }
 
 template <size_t N, size_t C, size_t H, size_t W, typename T>
@@ -342,31 +358,106 @@ void convolution_backward(cudnnHandle_t handle,
                           T *diff_bias) {
   const float alpha = 1.0f;
   const float beta = 1.0f;
+  constexpr auto OutH = static_cast<long long>((H + 2 * padding - KernelSize + 1) / stride);
+  constexpr auto OutW = static_cast<long long>((W + 2 * padding - KernelSize + 1) / stride);
   auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
-  auto dst_desc = getTensor4dDescriptor<N, OC, H, W, T>();
+  auto dst_desc = getTensor4dDescriptor<N, OC, OutH, OutW, T>();
   auto conv_desc = getConvolutionDescriptor<padding, stride, T>();
-  auto kernel_descriptor = getFilter4dDescriptor<OC, C, KernelSize, KernelSize, T>();
-  auto bias_descriptor = getTensor4dDescriptor<1, OC, 1, 1, T>();
+  auto kernel_desc = getFilter4dDescriptor<OC, C, KernelSize, KernelSize, T>();
+  auto bias_desc = getTensor4dDescriptor<1, OC, 1, 1, T>();
   // cudnnConvolutionBwdDataAlgo_t algorithm{};
-  // cudnnGetConvolutionBackwardDataAlgorithm(handle, kernel_descriptor, dst_desc, conv_desc, src_desc, CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST, 0, algorithm);
+  // cudnnGetConvolutionBackwardDataAlgorithm(handle, kernel_desc, dst_desc, conv_desc, src_desc, CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST, 0, algorithm);
 
-  auto error = cudnnConvolutionBackwardFilter(handle, &alpha, src_desc, src, dst_desc, diff_dst, conv_desc, CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1, NULL, 0, &beta, kernel_descriptor, diff_weights);
+  auto bwdAlgo = getConvolutionBwdFilterAlgo(handle, src_desc, dst_desc, conv_desc, kernel_desc);
+  auto error = cudnnConvolutionBackwardFilter(handle, &alpha, src_desc, src, dst_desc, diff_dst, conv_desc, bwdAlgo, NULL, 0, &beta, kernel_desc, diff_weights);
   checkCUDNN(error);
-  error = cudnnConvolutionBackwardBias(handle, &alpha, dst_desc, diff_dst, &beta, bias_descriptor, diff_bias);
+  error = cudnnConvolutionBackwardBias(handle, &alpha, dst_desc, diff_dst, &beta, bias_desc, diff_bias);
   checkCUDNN(error);
 }
 
 template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
 size_t padding, size_t stride, typename T>
-void convolution_backward_data(cudnnHandle_t handle, const T *diff_dst, const T *weights, const T *diff_src) {
+void convolution_backward_data(cudnnHandle_t handle, const T *diff_dst, const T *weights, T *diff_src) {
   const float alpha = 1.0f;
   const float beta = 1.0f;
-  auto kernel_desc = getFilter4dDescriptor<OC, C, KernelSize, KernelSize, T>();
-  auto dst_desc = getTensor4dDescriptor<N, OC, H, W, T>();
-  auto conv_desc = getConvolutionDescriptor<padding, stride, T>();
-  auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
-  auto error = cudnnConvolutionBackwardData(handle, &alpha, kernel_desc, weights, dst_desc, diff_dst, conv_desc, CUDNN_CONVOLUTION_BWD_DATA_ALGO_1, NULL, 0, &beta, src_desc, diff_src);
+  constexpr auto OutH = static_cast<long long>((H + 2 * padding - KernelSize + 1) / stride);
+  constexpr auto OutW = static_cast<long long>((W + 2 * padding - KernelSize + 1) / stride);
+  auto&& kernel_desc = getFilter4dDescriptor<OC, C, KernelSize, KernelSize, T>();
+  auto&& dst_desc = getTensor4dDescriptor<N, OC, OutH, OutW, T>();
+  auto&& conv_desc = getConvolutionDescriptor<padding, stride, T>();
+  auto&& src_desc = getTensor4dDescriptor<N, C, H, W, T>();
+  auto bwdAlgo = getConvolutionBwdDataAlgo(handle, src_desc, dst_desc, conv_desc, kernel_desc);
+  const size_t workspace_bytes = [=]() -> size_t {
+    size_t workspace_size = 0;
+    checkCUDNN(cudnnGetConvolutionBackwardDataWorkspaceSize(
+        handle, kernel_desc, dst_desc, conv_desc, src_desc, bwdAlgo, &workspace_size));
+    return workspace_size;
+  }();
+  auto&& error = cudnnConvolutionBackwardData(handle, &alpha, kernel_desc, weights, dst_desc, diff_dst, conv_desc, bwdAlgo, NULL, 0, &beta, src_desc, diff_src);
   checkCUDNN(error);
+}
+
+template <size_t N, size_t IC, typename T>
+void logsoftmax_backward(cudnnHandle_t handle,
+                         const T *diff_dst, const T *dst,
+                         T *diff_src) {
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  auto&& src_desc = getTensor4dDescriptor<N, IC, 1, 1, T>();
+  auto error = cudnnSoftmaxBackward(handle, CUDNN_SOFTMAX_LOG, CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, src_desc, dst, src_desc, diff_dst, &beta, src_desc, diff_src);
+  checkCUDNN(error);
+}
+
+curandGenerator_t createCudaRandGenerator();
+
+extern curandGenerator_t gen;
+
+
+template <size_t n>
+void tensorFillUniform(float *tensor, float lower, float upper) {
+  CURAND_CALL(curandGenerateUniform(gen, tensor, n));
+  thrust::transform(thrust::device, tensor, tensor+n, tensor, [=] __host__ __device__ (float a) {
+    return a * (upper-lower) + lower;
+  });
+}
+
+template <typename T>
+void copy(const T *src_begin, const T *src_end, T *dst_begin) {
+  thrust::copy(thrust::device, src_begin, src_end, dst_begin);
+}
+
+template <typename FileType, typename DataType>
+void load_bin_convert(DataType *gpu_data, const char *path, size_t elem_count, size_t offsetElems) {
+  DataType *data = (DataType*)malloc(sizeof(DataType)*elem_count);
+  int err = 0;
+  int fd = open(path, O_RDONLY);
+  if (fd < 0) {
+    perror("open() failed!");
+    abort();
+  }
+
+  struct stat file_stat {};
+  err = fstat(fd, &file_stat);
+  if (err < 0) {
+    perror("fstat() failed");
+    abort();
+  }
+  size_t bytes = file_stat.st_size;
+
+  void *p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+  if (p == MAP_FAILED) {
+    perror("mmap() failed");
+    abort();
+  }
+  assert(elem_count <= bytes / sizeof(FileType));
+  FileType *file = static_cast<FileType *>(p);
+  for (size_t i = offsetElems; i < offsetElems + elem_count; i++) {
+    data[i] = static_cast<DataType>(file[i]);
+  }
+  munmap(file, bytes);
+  close(fd);
+  gpu::memcpy(gpu_data, data, sizeof(DataType)*elem_count);
+  free(data);
 }
 
 } // namespace gpu
