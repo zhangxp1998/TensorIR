@@ -46,7 +46,7 @@ trait CPUTensorDiff extends CPUTensorOps {
     def grad(f: (TensorR[Float], TensorR[Float]) => TensorR[Float]@cps[Unit])
             (x: Tensor[Float], y: Tensor[Float]): (Tensor[Float], Tensor[Float]) = {
       val z1 = new TensorR[Float](x, Tensor.zero[Float](x.dims, AllocationType.Gradient))
-      val z2 = new TensorR[Float](y, Tensor.zero[Float](x.dims, AllocationType.Gradient))
+      val z2 = new TensorR[Float](y, Tensor.zero[Float](y.dims, AllocationType.Gradient))
       reset({
         val res = f(z1, z2)
         res.d = Tensor.fill[Float](res.x.dims, 1.0f, AllocationType.Gradient)
@@ -192,8 +192,9 @@ trait CPUTensorDiff extends CPUTensorOps {
       val y = new TensorR(cache._1, Tensor.zero[A](cache._1.dims, AllocationType.Gradient))
       k(y)
       val (_, avg, variance) = if (recomp) x.batchNorm(gamma_beta.x) else cache
+      val mA = Backend.Const(manifest[A])
       Adapter.g.reflectEffect(
-        "batchNorm-backprop", Backend.Const(d.dims)+:Seq(x, y.d, avg, variance, d, gamma_beta.x, gamma_beta.d).map(a => Unwrap(a.memDesc)): _*
+        "batchNorm-backprop", mA+:Backend.Const(d.dims)+:Seq(x, y.d, avg, variance, d, gamma_beta.x, gamma_beta.d).map(a => Unwrap(a.memDesc)): _*
       )(
         Seq(x, y.d, avg, variance, gamma_beta.x).map(a => Unwrap(a.data)): _*
       )(
