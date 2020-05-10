@@ -300,8 +300,8 @@ template <size_t R, size_t C, typename T>
 void sum_rows(T *mat, T *_vec) {
   static_assert(C > 0, "The matrix should be a wellformed 2D matrix");
   thrust::device_ptr<T> vec{_vec};
-  thrust::transform(vec, vec+C, vec, sum_functor<T>(R, C, mat));
-  
+  auto begin = thrust::counting_iterator<int>(0);
+  thrust::transform(begin, begin+C, vec, sum_functor<T>(R, C, mat));
 }
 
 template <size_t N, size_t IC, typename T>
