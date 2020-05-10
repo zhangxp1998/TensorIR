@@ -174,7 +174,7 @@ trait CPUTensorDiff extends CPUTensorOps {
         Unwrap(that.d.data), Unwrap(bias.d.data)
       ))
       Wrap[Unit](Adapter.g.reflectEffect(
-        "conv2d-data-backprop", Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, that.x, d).map(a => Unwrap(a.memDesc)): _*
+        "conv2d-data-backprop", mA +: Backend.Const(d.dims) +: Backend.Const(Seq(oc, kh, padding, stride)) +: Seq(y.d, that.x, d).map(a => Unwrap(a.memDesc)): _*
       )(
         Unwrap(y.d.data), Unwrap(that.x.data)
       )(
