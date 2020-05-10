@@ -315,7 +315,7 @@ void nll_loss_backward(const T *diff_dst, const Idx *label, T *diff_src) {
     thrust::counting_iterator<int>(0), 
     [diff_src, label] __host__ __device__(int idx) -> T& { return diff_src[idx * IC + label[idx]]; }
     );
-  thrust::transform(thrust::device, losses, losses+N, losses, []__host__ __device__(T t) { return t -(*diff_dst)/N; });
+  thrust::transform(thrust::device, losses, losses+N, losses, [=]__host__ __device__(T t) { return t -(*diff_dst)/N; });
 }
 
 template <size_t N, size_t C, size_t H, size_t W, typename T>
@@ -334,10 +334,6 @@ void batchnorm_backward(cudnnHandle_t handle,
   checkCUDNN(error);
 }
 
-cudnnConvolutionBwdDataAlgo_t getConvolutionBackwardAlgorithm(cudnnHandle_t handle) {
-  
-}
-
 template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
           size_t padding, size_t stride, typename T>
 void convolution_backward(cudnnHandle_t handle,
@@ -349,14 +345,27 @@ void convolution_backward(cudnnHandle_t handle,
   auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
   auto dst_desc = getTensor4dDescriptor<N, OC, H, W, T>();
   auto conv_desc = getConvolutionDescriptor<padding, stride, T>();
-  auto kernel_descriptor = getFilter4dDescriptor<OutChannels, C, KernelSize, KernelSize, T>();
-  auto bias_descriptor = getTensor4dDescriptor<1, OutChannels, 1, 1, T>();
+  auto kernel_descriptor = getFilter4dDescriptor<OC, C, KernelSize, KernelSize, T>();
+  auto bias_descriptor = getTensor4dDescriptor<1, OC, 1, 1, T>();
   // cudnnConvolutionBwdDataAlgo_t algorithm{};
   // cudnnGetConvolutionBackwardDataAlgorithm(handle, kernel_descriptor, dst_desc, conv_desc, src_desc, CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST, 0, algorithm);
 
   auto error = cudnnConvolutionBackwardFilter(handle, &alpha, src_desc, src, dst_desc, diff_dst, conv_desc, CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1, NULL, 0, &beta, kernel_descriptor, diff_weights);
   checkCUDNN(error);
   error = cudnnConvolutionBackwardBias(handle, &alpha, dst_desc, diff_dst, &beta, bias_descriptor, diff_bias);
+  checkCUDNN(error);
+}
+
+template <size_t N, size_t C, size_t H, size_t W, size_t OC, size_t KernelSize,
+size_t padding, size_t stride, typename T>
+void convolution_backward_data(cudnnHandle_t handle, const T *diff_dst, const T *weights, const T *diff_src) {
+  const float alpha = 1.0f;
+  const float beta = 1.0f;
+  auto kernel_desc = getFilter4dDescriptor<OC, C, KernelSize, KernelSize, T>();
+  auto dst_desc = getTensor4dDescriptor<N, OC, H, W, T>();
+  auto conv_desc = getConvolutionDescriptor<padding, stride, T>();
+  auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
+  auto error = cudnnConvolutionBackwardData(handle, &alpha, kernel_desc, weights, dst_desc, diff_dst, conv_desc, CUDNN_CONVOLUTION_BWD_DATA_ALGO_1, NULL, 0, &beta, src_desc, diff_src);
   checkCUDNN(error);
 }
 
