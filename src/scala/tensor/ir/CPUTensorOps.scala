@@ -60,7 +60,7 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
       Unwrap(probs.data), Unwrap(labels.data)
     )
     )
-    infix_/(loss, rows.asInstanceOf[A])
+    loss
   }
   object Tensor {
     def apply[A: Manifest: Ordering](xs: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[A] = {
@@ -82,8 +82,9 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
     def rand(dims: Seq[Int], allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = rand(dims, 0.0f, 1.0f, allocType)
     def rand(dims: Seq[Int], lower: Float, upper: Float, allocType: AllocationType)(implicit pos: SourceContext): Tensor[Float] = {
       val tensor = Tensor[Float](dims, allocType)
-      val distribution = getUniformFloatDistribution(lower, upper)
-      tensor.mapInplace(_ => sampleDistribution(distribution))
+//      val distribution = getUniformFloatDistribution(lower, upper)
+      Wrap[Unit](Adapter.g.reflectWrite("tensor-rand", Unwrap(tensor.data), Backend.Const(dims), Backend.Const((lower, upper)))(Unwrap(tensor.data)))
+//      tensor.mapInplace(_ => sampleDistribution(distribution))
       tensor
     }
     def createMemDims(dims: Seq[Int]): Rep[MemDims] = {
@@ -155,9 +156,8 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
 
     def update(idx: Seq[Int], newVal: Rep[A]): Unit = {
       checkIdx(idx)
-      val mA = Backend.Const(manifest[A])
-      val unwrapped_xs: Seq[Backend.Def] = Seq(mA, Unwrap(data), Backend.Const(idx), Unwrap(newVal), Backend.Const(dims))
-      Wrap[Unit](Adapter.g.reflectWrite("tensor-update", unwrapped_xs:_*)(Unwrap(data)))
+      val linearIndex = idx.zip(strides).map{case (a, b) => a*b}.sum
+      unsafe_update(linearIndex, newVal)
     }
     def unsafe_apply(idx: Rep[Int]): Rep[A] = {
       val mA = Backend.Const(manifest[A])
@@ -527,7 +527,7 @@ trait CPUTensorOps extends Printf with Equal with OrderingOps with PrimitiveOps 
 
     def fread(path: String, dtype: String): Unit = {
       val mA = Backend.Const(manifest[A])
-      val offset = /*MPI.comm_rank(MPI.MPI_COMM_WORLD) * */ dims.product
+      val offset = 0 /*MPI.comm_rank(MPI.MPI_COMM_WORLD) * dims.product*/
       Wrap[Unit](Adapter.g.reflectEffect("tensor-fread", mA, Unwrap(data), Backend.Const(path), Backend.Const(dims), Backend.Const(dtype), Unwrap(offset))(Adapter.CTRL)(Unwrap(data)))
     }
     def all_average(comm: Rep[MPI_Comm]): Unit = {

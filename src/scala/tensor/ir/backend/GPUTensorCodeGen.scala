@@ -32,17 +32,15 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
   override def shallow(node: Node): Unit = node match {
     case Node(_, "tensor-new", Const(manifest: Manifest[_])::Backend.Const(dims: Seq[Int])::Const(_)::Nil, _) =>
       emit(s"gpu::gpu_malloc<${remap(manifest)}>(${dims.product})")
-    case Node(s, "tensor-apply", List(_, tensor, Const(idx: Seq[Int]), Const(dims: Seq[Int])), _) =>
-      val sizes = dims.scanRight(1)(_ * _).tail
-      emit(s"gpu::read_gpu_mem(")
+    case Node(s, "tensor-apply", List(_, tensor, Const(indices: Seq[Int]), Const(dims: Seq[Int])), _) =>
+      val strides = dims.scanRight(1)(_ * _).tail
+      val idx = indices.zip(strides).map{case (a, b) => a*b}.sum
+      emit("gpu::read_gpu_mem(")
       shallow(tensor)
-      emit(s", ${idx.zip(sizes).map{case (a, b) => a*b}.sum})")
-    case Node(s, "tensor-update", List(_, tensor, Const(idx: Seq[Int]), newVal, Const(dims: Seq[Int])), _) =>
-      val sizes = dims.scanRight(1)(_ * _).tail
+      emit(s", $idx)")
+    case Node(s, "tensor-update", List(_, tensor, idx, newVal), _) =>
       emit(s"gpu::write_gpu_mem(")
-      shallow(tensor)
-      emit(s", ${idx.zip(sizes).map{case (a, b) => a*b}.sum}, ")
-      shallow(newVal)
+      shallowParams(tensor, idx, newVal)
       emit(")")
     case Node(s, "tensor-transform-range", List(Const(mA: Manifest[_]), data, block: Block, begin, end), _) =>
       assert(block.in.length == 1)
@@ -116,6 +114,9 @@ trait GPUTensorCodeGen extends CPUDiffTensorCodeGen {
     "tensor-nll-loss" -> "gpu::nll_loss",
     "nll-loss-backward" -> "gpu::nll_loss_backward",
     "heap-offset-copy" -> "gpu::memcpy",
+    "tensor-fread" -> "gpu::load_bin_convert",
+    "tensor-rand" -> "gpu::tensorFillUniform",
+    "tensor-data-copy" -> "gpu::copy",
   )
 
   override def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {

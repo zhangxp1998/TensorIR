@@ -32,7 +32,7 @@ trait CPUDiffTensorCodeGen extends CPUTensorCodeGen {
       emit(s"convolution_backward_data<$n, $c, $h, $w, $oc, $kh, $padding, $stride>(eng, stream, ")
       shallowParams(diff_dst, weight, diff_src)
       emit(")")
-    case Node(s, "logsoftmax-backward", List(diff_dst, dst, diff_src, Const((rows: Int, rowSize: Int))), _) =>
+    case Node(s, "logsoftmax-backward", List(mA, diff_dst, dst, diff_src, Const((rows: Int, rowSize: Int))), _) =>
       emit(s"logsoftmax_backward<$rows, $rowSize>(eng, stream, ")
       shallowParams(diff_dst, dst, diff_src)
       emit(")")

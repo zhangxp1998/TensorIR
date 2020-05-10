@@ -299,7 +299,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       shallowParams(input, output, kernels, bias)
       emit(")")
     case Node(s, "tensor-fread", List(Const(mA: Manifest[_]), data, Const(path: String), Const(dims: Seq[Int]), Const(dtype: String), offset), _) =>
-      emit(s"load_bin_convert<$dtype, ${remap(mA)}>(")
+      emit(s"${forwardFuncNames(node.op)}<$dtype, ${remap(mA)}>(")
       shallow(data)
       emit(s", ${quote(path)}, ${dims.product}, ")
       shallow(offset)
@@ -321,7 +321,7 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(")")
     case Node(s, "tensor-data-copy", List(_, src, dst, Const(dims: Seq[Int]), src_begin, src_end, dst_begin), _) =>
       val elemCount = dims.product
-      emit("std::copy(")
+      emit(s"${forwardFuncNames(node.op)}(")
       emitBeginEnd(src, src_begin, src_end)
       emit(", ")
       shallow(dst)
@@ -354,6 +354,10 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
       emit(s"${forwardFuncNames(node.op)}<$rows, $rowSize, ${remap(mA)}>(")
       shallowParams(diff_dst, labels, diff_src)
       emit(")")
+    case Node(s, "tensor-rand", List(data, Const(dims: Seq[Int]), Const((lower: Float, upper: Float))), _) =>
+      emit(s"${forwardFuncNames(node.op)}<${dims.product.toString}>(")
+      shallow(data)
+      emit(s", $lower, $upper)")
     case _ => super.shallow(node)
   }
   val forwardFuncNames = Map(
@@ -364,6 +368,9 @@ trait CPUTensorCodeGen extends MPICodeGen with RandomOpsCodegen with PrintfCodeG
     "tensor-nll-loss" -> "nll_loss",
     "nll-loss-backward" -> "nll_loss_backward",
     "heap-offset-copy" -> "memcpy",
+    "tensor-fread" -> "load_bin_convert",
+    "tensor-rand" -> "tensorFillUniform",
+    "tensor-data-copy" -> "std::copy",
   )
   def getPrimitiveOpLambda(op: String, mA: Manifest[_]): String = op match {
     case "+" => s"std::plus<${remap(mA)}>()"

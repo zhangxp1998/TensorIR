@@ -241,7 +241,7 @@ trait CPUTensorDiff extends CPUTensorOps {
       )
 
       Wrap[Unit](Adapter.g.reflectEffect(
-        "logsoftmax-backward", Seq(diff_dst, probs, d).map(a => Unwrap(a.memDesc)) :+ Backend.Const((rows, rowSize)): _*
+        "logsoftmax-backward", mA +: Seq(diff_dst, probs, d).map(a => Unwrap(a.memDesc)) :+ Backend.Const((rows, rowSize)): _*
       )(
         Unwrap(diff_dst.data), Unwrap(probs.data)
       )(

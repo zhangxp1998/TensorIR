@@ -26,6 +26,10 @@ trait GPUDiffTensorCodeGen extends GPUTensorCodeGen {
       emit(s"gpu::convolution_backward_data<$n, $c, $h, $w, $oc, $kh, $padding, $stride, ${remap(mA)}>(gpu::cudnnHandle, ")
       shallowParams(diff_dst, weight, diff_src)
       emit(")")
+    case Node(s, "logsoftmax-backward", List(Const(mA: Manifest[_]), diff_dst, dst, diff_src, Const((rows: Int, rowSize: Int))), _) =>
+      emit(s"gpu::logsoftmax_backward<$rows, $rowSize, ${remap(mA)}>(gpu::cudnnHandle, ")
+      shallowParams(diff_dst, dst, diff_src)
+      emit(")")
     case _ => super.shallow(node)
   }
 }
