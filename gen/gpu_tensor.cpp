@@ -3,7 +3,7 @@ cublasHandle_t gpu::cublasHandle = gpu::createCublasHandle();
 cudnnHandle_t gpu::cudnnHandle = gpu::createCudnnHandle();
 curandGenerator_t gpu::gen = gpu::createCudaRandGenerator();
 
-
+constexpr auto CUDA_DEVICE = 0;
 curandGenerator_t gpu::createCudaRandGenerator() {
   curandGenerator_t gen;
   /* Create pseudo-random number generator */
@@ -18,6 +18,7 @@ curandGenerator_t gpu::createCudaRandGenerator() {
 
 cublasHandle_t gpu::createCublasHandle()
 {
+  cudaSetDevice(CUDA_DEVICE);
   cublasHandle_t handle{};
   auto error = cublasCreate(&handle);
   assert(CUBLAS_STATUS_SUCCESS == error);
@@ -26,6 +27,7 @@ cublasHandle_t gpu::createCublasHandle()
 
 cudnnHandle_t gpu::createCudnnHandle()
 {
+  cudaSetDevice(CUDA_DEVICE);
   cudnnHandle_t cudnn;
   checkCUDNN(cudnnCreate(&cudnn));
   return cudnn;
