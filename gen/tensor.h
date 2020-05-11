@@ -216,6 +216,22 @@ T nll_loss(const T *src, const Idx *label) {
   return sum/N;
 }
 
+template <typename T>
+void save_tensor(const char *path, const T *data, size_t size) {
+  FILE *file = fopen(path, "w");
+  assert(file != NULL);
+  fwrite(data, sizeof(T), size, file);
+  fclose(file);
+}
+
+template <typename T>
+void load_tensor(const char *path, T *data, size_t size) {
+  FILE *file = fopen(path, "r");
+  assert(file != NULL);
+  fread(data, sizeof(T), size, file);
+  fclose(file);
+}
+
 std::mt19937& getRandEngine();
 
 template <size_t n>
