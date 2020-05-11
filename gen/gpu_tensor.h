@@ -254,8 +254,7 @@ void conv2d_forward(cudnnHandle_t handle,
       handle, &alpha, input_descriptor, input, kernel_descriptor, weights,
       convolution_descriptor, convolution_algorithm, d_workspace,
       workspace_bytes, &beta, output_descriptor, output));
-  const float alpha2 = 1.0f;
-  checkCUDNN(cudnnAddTensor(handle, &alpha, bias_descriptor, bias, &alpha2, output_descriptor, output));
+  checkCUDNN(cudnnAddTensor(handle, &alpha, bias_descriptor, bias, &alpha, output_descriptor, output));
   gpu_free(d_workspace);
 }
 
@@ -271,7 +270,7 @@ void batchnorm_forward(cudnnHandle_t handle,
   auto src_desc = getTensor4dDescriptor<N, C, H, W, T>();
   auto dst_desc = getTensor4dDescriptor<N, C, H, W, T>();
   auto scale_shift_desc = getTensor4dDescriptor<1, C, 1, 1, T>();
-  auto error = cudnnBatchNormalizationForwardTraining(handle, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta, src_desc, src, dst_desc, dst, scale_shift_desc, scale_shift, scale_shift + C, 0.5, avg, variance, EPSILON, resultSaveMean, resultSaveInvVariance);
+  auto error = cudnnBatchNormalizationForwardTraining(handle, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta, src_desc, src, dst_desc, dst, scale_shift_desc, scale_shift, scale_shift + C, 1.0, avg, variance, EPSILON, resultSaveMean, resultSaveInvVariance);
   checkCUDNN(error);
 }
 
@@ -288,7 +287,7 @@ struct sum_functor
   __host__ __device__
   T operator()(int myC){
     T sum = 0;
-      for (int i = 0; i < R; i++) sum += arr[i*C+myC];
+      for (size_t i = 0; i < R; i++) sum += arr[i*C+myC];
     return sum;
     }
 };
@@ -402,7 +401,7 @@ void logsoftmax_backward(cudnnHandle_t handle,
                          const T *diff_dst, const T *dst,
                          T *diff_src) {
   const float alpha = 1.0f;
-  const float beta = 0.0f;
+  const float beta = dst == diff_src || diff_dst == diff_src ? 0.0f : 1.0f;
   auto&& src_desc = getTensor4dDescriptor<N, IC, 1, 1, T>();
   auto error = cudnnSoftmaxBackward(handle, CUDNN_SOFTMAX_LOG, CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, src_desc, dst, src_desc, diff_dst, &beta, src_desc, diff_src);
   checkCUDNN(error);
@@ -424,6 +423,16 @@ void tensorFillUniform(float *tensor, float lower, float upper) {
 template <typename T>
 void copy(const T *src_begin, const T *src_end, T *dst_begin) {
   thrust::copy(thrust::device, src_begin, src_end, dst_begin);
+}
+
+template <typename T>
+void load_tensor(const char *path, T *data, size_t size) {
+  FILE *file = fopen(path, "r");
+  assert(file != NULL);
+  float *tmp = (float*)malloc(size * sizeof(T));
+  fread(tmp, sizeof(T), size, file);
+  gpu::memcpy(data, tmp, size * sizeof(T));
+  free(tmp);
 }
 
 template <typename FileType, typename DataType>
