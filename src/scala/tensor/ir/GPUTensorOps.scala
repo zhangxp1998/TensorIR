@@ -81,12 +81,19 @@ object GPUTensorOps {
         val loss = x.softmaxLoss(labels)
         println(loss)
       }
-      override def snippet(x: Rep[String]): Rep[Unit] = {
+      def testBatchNormBackprop(): Unit = {
         val C = 3
         val x = Tensor.fill[Float](Seq(32, C, 16, 16), 3.0f, AllocationType.Data)
         val gamma_beta = Tensor.fill[Float](Seq(2, C), 1.0f, AllocationType.Data)
         val (dsrc, dparam) = TensorR.grad((src, param) => src.batchNorm(param))(x, gamma_beta)
         println(dparam(0, 0), dparam(1, 0))
+      }
+      override def snippet(x: Rep[String]): Rep[Unit] = {
+        val mat = Tensor[Float](Seq(10, 10), AllocationType.Data)
+        mat.mapInplaceWithFlatIdx(x => x % 10)
+        val vec = Tensor[Float](Seq(10), AllocationType.Data)
+        mat.sumRows(vec)
+        println(vec(0), vec(1))
       }
     }
     dslDriver.eval("0")
