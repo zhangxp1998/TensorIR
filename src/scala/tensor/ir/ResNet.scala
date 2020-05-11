@@ -115,7 +115,7 @@ object ResNet {
           reset({
             val res = f(z)
             res.d.fill(1.0f)
-            println(res.x.unsafe_apply(0))
+            println(res.x(0))
           })
           z.d
         }
