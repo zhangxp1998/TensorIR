@@ -39,7 +39,7 @@ get_conv2d_prim_desc(const dnnl::engine &eng) {
   // create a convolution
   //  try {
   auto conv2_desc = convolution_forward::desc(
-      prop_kind::forward_inference, algorithm::convolution_auto, conv2_src_md,
+      prop_kind::forward_training, algorithm::convolution_auto, conv2_src_md,
       conv2_weights_md, conv2_bias_md, conv2_dst_md, conv2_strides,
       conv2_padding, conv2_padding);
   return convolution_forward::primitive_desc(conv2_desc, eng);
@@ -191,6 +191,7 @@ template <typename DataType> void mmap_file(const char *path, size_t size) {
 
 // mat should be a rows x cols matrix, vec should be a cols vector.
 // Compute the sum of rows of the matrix, store it in vec
+// Equivalent to numpy's matrix.sum(axis=0)
 template <size_t rows, size_t cols>
 void sum_rows(const float *mat, float *vec) {
   static_assert(cols > 0, "The matrix should be a wellformed 2D matrix");
